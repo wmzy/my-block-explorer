@@ -1,6 +1,8 @@
 import { eq, and, or, sql, gte, lte, lt, isNull, desc, ne, count, type SQL } from 'drizzle-orm';
-import { db } from '../database/drizzle';
-import { sqlCountTotal } from '../database/init';
+import { db, sqlCountTotal } from '../database/init';
+// Shared unique-violation predicate: the adapter owns the pg-code mapping,
+// so the 23505 classification lives with it (duckdb-postgres-adapter.ts).
+import { isUniqueViolation } from '../database/duckdb-postgres-adapter';
 import {
   indexingProgress,
   contractEvents,
@@ -252,15 +254,8 @@ const insertEventChunk = async (rows: Array<typeof contractEvents.$inferInsert>)
 // rows silently dropped with the range later reported complete —
 // unrecoverable event loss. The duckdb adapter wraps errors as
 // '[<pgcode>] <message>' with a `code` property; '23505' is the pg
-// unique-violation code (duckdb-postgres-adapter.ts mapErrorCode).
-const DUPLICATE_ROW_ERROR_RE = /duplicate key|unique constraint|\[23505\]/i;
-
-const isDuplicateRowError = (err: unknown): boolean => {
-  if (err !== null && typeof err === 'object' && (err as { code?: unknown }).code === '23505') {
-    return true;
-  }
-  return DUPLICATE_ROW_ERROR_RE.test(errorMessage(err));
-};
+// unique-violation code — classified by the adapter-owned
+// isUniqueViolation core (no local twin).
 
 const insertEvents = async (
   chainId: number,
@@ -306,7 +301,7 @@ const insertEvents = async (
         try {
           await insertEventChunk([row]);
         } catch (rowErr) {
-          if (isDuplicateRowError(rowErr)) {
+          if (isUniqueViolation(rowErr)) {
             // Legitimate dedup: the row is already stored under the PK.
             logger.warn(
               {
@@ -1088,7 +1083,7 @@ export const addIndexingRange = async (
     rangeId = await getNextRangeId(chainId, address);
     await insertRangeRow(rangeId);
   } catch (err) {
-    if (!isDuplicateRowError(err)) throw err;
+    if (!isUniqueViolation(err)) throw err;
     rangeId = await getNextRangeId(chainId, address);
     await insertRangeRow(rangeId);
   }

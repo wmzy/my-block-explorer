@@ -23,7 +23,6 @@ import { TypedLink } from '@native-router/react';
 import { Alert } from 'haze-ui';
 
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { CallTypeBadge } from '@/components/CallTypeBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
@@ -35,9 +34,10 @@ import {
   depthCell,
   FailedTracesCollapsible,
   muted,
-  retryRow,
+  RetryRow,
   summaryLine,
   traceOneTxOutcome,
+  TRUNCATED_LIST_NOTE,
 } from '@/components/internalTxnsShared';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
 import { useLazyExpand } from '@/util/useLazyExpand';
@@ -315,7 +315,7 @@ export function InternalTxnsSection({
         )}
         {aggregate.truncated && (
           <p className={summaryLine} data-testid="block-internal-txns-row-cap">
-            Row or depth limits were hit — this list is truncated, not exhaustive.
+            {TRUNCATED_LIST_NOTE}
           </p>
         )}
         {aggregate.groups.length === 0 ? (
@@ -481,11 +481,7 @@ export function InternalTxnsSection({
                 Internal transaction tracing is not supported by this RPC — the endpoint does not
                 implement <code>debug_traceTransaction</code>. Nothing was traced.
               </Alert>
-              <div className={retryRow}>
-                <Button variant="secondary" size="sm" onClick={retry}>
-                  Retry
-                </Button>
-              </div>
+              <RetryRow onRetry={retry} />
             </div>
           )}
           {transactionCount > 0 && state.phase === 'settled' && renderSettled(state.result)}

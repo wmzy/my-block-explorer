@@ -54,8 +54,7 @@
  */
 
 import { and, count, desc, eq, lt } from 'drizzle-orm';
-import { db } from '../database/drizzle';
-import { sqlCountTotal } from '../database/init';
+import { db, sqlCountTotal } from '../database/init';
 import {
   addressScanJobs,
   addressScanFindings,

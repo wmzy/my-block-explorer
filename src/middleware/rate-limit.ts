@@ -1,5 +1,8 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { getConnInfo } from '@hono/node-server/conninfo';
+// Relative import on purpose (see the header comment): the canonical
+// error envelope helper is project-local and rides the same graph.
+import { createApiError } from '../utils/api-error';
 
 // In-process token-bucket rate limiter for the recomputation-heavy read
 // endpoints (CSV export, on-demand transfer sweeps, contract interaction).
@@ -202,10 +205,17 @@ export function createRateLimiter(config: RateLimiterConfig): MiddlewareHandler 
     // can overshoot an exact second boundary by picoseconds).
     const retryAfterSeconds = Math.max(1, Math.ceil((retryAfterMs - 1) / 1000));
     c.header('Retry-After', String(retryAfterSeconds));
+    // Canonical error envelope (createApiError: statusCode + timestamp
+    // beside error/message), with retryAfterSeconds kept as this body's
+    // one extra field — the standard 429 machine-readable hint that does
+    // not fit the generic envelope.
     return c.json(
       {
-        error: 'rate_limited',
-        message: `Rate limit exceeded for ${name}; retry after ${retryAfterSeconds}s.`,
+        ...createApiError(
+          429,
+          'rate_limited',
+          `Rate limit exceeded for ${name}; retry after ${retryAfterSeconds}s.`,
+        ),
         retryAfterSeconds,
       },
       429,

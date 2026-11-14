@@ -5,6 +5,7 @@ import { transactionService } from '../services/TransactionService';
 import { rpcManager } from '../services/RpcManager';
 import { withTimeoutOrNull } from '../utils/withTimeout';
 import { errorMessage } from '../utils/errorHandler';
+import { respondError } from '../utils/api-error';
 import {
   getChainName,
   getChainSymbol,
@@ -88,12 +89,11 @@ app.get('/stats/overview', async c => {
     // uses: a database we could not read is NOT the same answer as a
     // database that reported zero indexed blocks.
     logger.error({ err: error }, 'Stats overview API error');
-    return c.json(
-      {
-        error: 'stats_unavailable',
-        message: errorMessage(error, 'Failed to load stats overview'),
-      },
+    return respondError(
+      c,
       503,
+      'stats_unavailable',
+      errorMessage(error, 'Failed to load stats overview'),
     );
   }
 });

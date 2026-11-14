@@ -25,7 +25,9 @@ import { encodeFunctionData } from 'viem';
 import type { AbiFunction, AbiParameter } from 'viem';
 import { errorMessage } from './errorHandler';
 import {
-  parseFunctionArgs,
+  ARRAY_SUFFIX_PATTERN,
+  INT_TYPE_PATTERN,
+  parseFormArgsForBuild,
   type ParamComponent,
   type ParamDescriptor,
 } from './paramParsing';
@@ -52,11 +54,6 @@ export type CastCommand =
     reason: string;
   };
 
-const INT_TYPE_PATTERN = /^(u?)int(\d+)?$/;
-// Rightmost array suffix — the same shape paramParsing peels, so any
-// array (fixed, dynamic, nested) is detected.
-const ARRAY_SUFFIX_PATTERN = /^(.*)\[(\d*)]$/;
-
 // Build the cast command for one function's current form state. `rawArgs`
 // are the form's raw input strings; a null/undefined entry is a missing
 // value and makes the command unbuildable (the caller disables its copy
@@ -78,38 +75,22 @@ export function buildCastCommand({
   /** Same-name overload input counts (`sameNameInputCounts` output). */
   overloadInputCounts?: readonly number[];
 }): CastCommand {
-  // An explicit null/undefined argument cannot be formatted; refuse it
-  // instead of silently treating it as a missing trailing empty.
-  if (rawArgs.some(arg => arg == null)) {
-    return { ok: false, reason: 'missing argument value' };
-  }
-  const args = rawArgs as readonly string[];
-
-  const parsed = parseFunctionArgs(func.inputs, args, overloadInputCounts);
-  if (!parsed.isValid) {
-    return {
-      ok: false,
-      reason: parsed.fieldErrors.find(err => err !== '') ?? 'invalid arguments',
-    };
-  }
-
-  // The form's trailing-empty rule: the trailing run of empty inputs is
-  // omitted from the encoded call, but only when a same-name overload
-  // accepts exactly the filled count (viem resolves by argument count).
-  // Without that overload the parse above already refused — the command
-  // must never encode a shortened signature the abi does not carry, or
-  // the calldata would target a selector that does not exist on the
-  // contract. The command mirrors the omission on both fronts — its
-  // argument list AND its signature use the shortened inputs, so
-  // calldata and signature agree with what submit sends.
-  const effectiveInputs = func.inputs.slice(0, parsed.values.length);
+  // Shared preamble (parseFormArgsForBuild): null-argument refusal, the
+  // form's own parseFunctionArgs validation, and the effective-inputs
+  // slice of the trailing-empty omission rule. The command mirrors the
+  // omission on both fronts — its argument list AND its signature use the
+  // shortened inputs, so calldata and signature agree with what submit
+  // sends and never encode a selector the abi does not carry.
+  const parsed = parseFormArgsForBuild(func, rawArgs, overloadInputCounts);
+  if (!parsed.ok) return { ok: false, reason: parsed.reason };
+  const { values, effectiveInputs } = parsed;
 
   let calldata: string;
   try {
     calldata = encodeFunctionData({
       abi: [toAbiFunction(func, effectiveInputs)],
       functionName: func.name,
-      args: parsed.values,
+      args: values,
     });
   } catch (error) {
     return { ok: false, reason: `cannot encode calldata: ${errorMessage(error)}` };
@@ -124,7 +105,7 @@ export function buildCastCommand({
   } else {
     parts.push(`"${canonicalSignature(func.name, effectiveInputs)}"`);
     effectiveInputs.forEach((input, index) => {
-      parts.push(formatCastArg(input.type, parsed.values[index]));
+      parts.push(formatCastArg(input.type, values[index]));
     });
   }
   if (valueWei !== undefined) {

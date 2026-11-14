@@ -18,7 +18,6 @@ import { Input } from 'haze-ui';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, linkStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
@@ -38,47 +37,13 @@ import {
 } from '@/services/tokenDirectory';
 import { useTokenUsdPrices, type UsdPriceSnapshot } from '@/services/prices';
 import { UsdValue } from '@/components/ui/UsdValue';
-
-// Header row: title on the left, the filter input and Refresh on the
-// right (Contracts/List toolbar family).
-const listToolbar = css`
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--haze-space-4);
-  margin-bottom: var(--haze-space-4);
-  flex-wrap: wrap;
-`;
-
-const toolbarActions = css`
-  display: flex;
-  align-items: center;
-  gap: var(--haze-space-2);
-
-  @media (max-width: 768px) {
-    flex-wrap: wrap;
-  }
-`;
-
-// The filter input keeps its own width; the Refresh button follows it.
-// On narrow screens the input owns a full-width row (Contracts/List).
-const filterBox = css`
-  width: 280px;
-  max-width: 100%;
-
-  @media (max-width: 768px) {
-    width: 100%;
-  }
-`;
-
-// Honesty line under the toolbar — present in EVERY state (loading, error,
-// empty, table): this is a curated list plus this browser's visits, not an
-// on-chain registry.
-const sourceNote = css`
-  font-size: var(--haze-text-sm);
-  color: var(--haze-color-text-secondary);
-  margin-bottom: var(--haze-space-3);
-`;
+import {
+  filterBox,
+  listToolbar,
+  sourceNote,
+  toolbarActions,
+} from '@/components/ui/listToolbar';
+import { RefreshButton } from '@/components/ui/RefreshButton';
 
 // Token cell: linked symbol, full name under it, address hash below
 // (Contracts/List's address-cell convention).
@@ -231,12 +196,12 @@ export default function TokensList() {
                 onChange={e => qFilter.setValue(e.target.value)}
               />
             </div>
-            <Button variant="outline" size="sm" onClick={refresh} disabled={readsQuery.fetching}>
-              {readsQuery.fetching ? 'Refreshing…' : '↻ Refresh'}
-            </Button>
+            <RefreshButton onClick={refresh} fetching={readsQuery.fetching} />
           </div>
         </div>
 
+        {/* Honesty line under the toolbar — rendered in EVERY state
+            (loading, error, empty, table); the copy is DIRECTORY_CAVEAT. */}
         <div className={sourceNote}>{DIRECTORY_CAVEAT}</div>
 
         {showSkeleton && <TableSkeleton rows={8} cols={4} />}

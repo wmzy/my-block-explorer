@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { RefreshButton } from '@/components/ui/RefreshButton';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
@@ -216,9 +216,7 @@ export default function BlocksList() {
               </Badge>
             )}
           </div>
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={headQuery.fetching}>
-            {headQuery.fetching ? 'Refreshing…' : '↻ Refresh'}
-          </Button>
+          <RefreshButton onClick={handleRefresh} fetching={headQuery.fetching} />
         </div>
 
         {loading && <TableSkeleton rows={10} cols={5} />}

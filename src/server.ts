@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici';
 import apiApp, { reconcileStartupState } from './api-app';
-import { db } from './database/drizzle';
+import { db } from './database/init';
 import { registerSelfDestructCloser } from './services/selfDestruct';
 import { runStartupSecurityChecks } from './startupChecks';
 import { createStaticFrontendHandler } from './middleware/og-meta';

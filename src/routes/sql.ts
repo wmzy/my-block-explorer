@@ -254,7 +254,7 @@ app.get('/sql/tables', async c => {
   } catch (error) {
     const message = errorMessage(error, 'Schema listing failed.');
     logger.error({ err: error }, 'SQL console schema listing failed');
-    return respondError(c, 500, 'Schema Listing Failed', message);
+    return respondError(c, 500, 'schema_listing_failed', message);
   }
 });
 

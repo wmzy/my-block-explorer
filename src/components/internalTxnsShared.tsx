@@ -1,14 +1,16 @@
 // Shared pieces for the two internal-transactions surfaces (the address
 // page's Internal Txns tab and the block detail page's traced Internal
-// Transactions card): the summary, muted-note, failed-trace, retry and
-// depth-cell styles, the FailedTracesCollapsible card both surfaces
-// render for trace requests that came back failed, and the per-tx trace
-// skeleton (traceOneTxOutcome) both surfaces run their requests through.
+// Transactions card): the summary, muted-note, failed-trace and depth-cell
+// styles, the RetryRow affordance and truncation note both surfaces
+// render, the FailedTracesCollapsible card both surfaces render for trace
+// requests that came back failed, and the per-tx trace skeleton
+// (traceOneTxOutcome) both surfaces run their requests through.
 // One source keeps the two surfaces visually and behaviorally identical
 // by construction — a styling, markup or catch-shaping change must land
 // here, never as a forked copy in one view. (The traced-progress loading
 // component the two surfaces also share lives in
 // components/TracedProgress.)
+import type { ReactNode } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
 import { Badge } from '@/components/ui/Badge';
@@ -77,9 +79,37 @@ export const failedTxRow = cx(
   `,
 );
 
-export const retryRow = css`
+// Retry row shape: a secondary sm button with the family's top margin.
+// Local to this module — surfaces render it through RetryRow below.
+const retryRow = css`
   margin-top: var(--haze-space-3);
 `;
+
+// The truncation sentence both surfaces render under the summary when the
+// flattener hit its row or depth caps — one source so the two pages can
+// never disagree on the honesty wording.
+export const TRUNCATED_LIST_NOTE =
+  'Row or depth limits were hit — this list is truncated, not exhaustive.';
+
+// The Retry affordance both surfaces render under an unusable-sweep
+// verdict (unsupported RPC, failed traces): re-runs the sweep via
+// onRetry. The label defaults to the bare 'Retry'; the failed-traces
+// card passes its own.
+export function RetryRow({
+  onRetry,
+  children = 'Retry',
+}: {
+  onRetry: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={retryRow}>
+      <Button variant="secondary" size="sm" onClick={onRetry}>
+        {children}
+      </Button>
+    </div>
+  );
+}
 
 export const depthCell = cx(
   muted,
@@ -122,11 +152,7 @@ export function FailedTracesCollapsible({ failures, chainId, onRetry }: FailedTr
           </div>
         ))}
       </Collapsible>
-      <div className={retryRow}>
-        <Button variant="secondary" size="sm" onClick={onRetry}>
-          Retry failed traces
-        </Button>
-      </div>
+      <RetryRow onRetry={onRetry}>Retry failed traces</RetryRow>
     </>
   );
 }

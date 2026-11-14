@@ -32,6 +32,7 @@ import { z } from 'zod';
 import TopNavigation from '@/components/TopNavigation';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { RefreshButton } from '@/components/ui/RefreshButton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, linkStyle, monoStyle } from '@/components/ui/DataTable';
@@ -380,14 +381,7 @@ function PendingBody({ chainId }: { chainId: number }) {
         >
           {grouped ? 'Flat list' : 'Group conflicts'}
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void feed.refetch()}
-          disabled={feed.fetching}
-        >
-          {feed.fetching ? 'Refreshing…' : '↻ Refresh'}
-        </Button>
+        <RefreshButton onClick={() => void feed.refetch()} fetching={feed.fetching} />
       </div>
 
       <div className={analysisStrip}>

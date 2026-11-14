@@ -2,17 +2,18 @@
 // Number() and parseInt both accept far more than these routes mean
 // ("0x1a" → 26, "1e5" → 100000, " 12", "+3"), which either surfaced as a
 // bare NaN in the UI or silently loaded the wrong block. These parsers
-// accept plain decimal digits only and stay honest otherwise.
+// delegate the strict plain-decimal-digits walk to parseStrictInteger
+// (the ONE documented home, same directory, import-free) and add only
+// their per-param range gates.
 
-const DECIMAL_INTEGER = /^\d+$/;
+import { parseStrictInteger } from './strictInteger';
 
 /**
  * Parse a :chainId route param: a plain decimal integer > 0, else null.
  */
 export function parseChainIdParam(raw: string | undefined): number | null {
-  if (raw === undefined || !DECIMAL_INTEGER.test(raw)) return null;
-  const parsed = Number(raw);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+  const parsed = parseStrictInteger(raw);
+  return parsed !== null && parsed > 0 ? parsed : null;
 }
 
 /**
@@ -20,9 +21,8 @@ export function parseChainIdParam(raw: string | undefined): number | null {
  * is genesis), else null.
  */
 export function parseBlockNumberParam(raw: string | undefined): number | null {
-  if (raw === undefined || !DECIMAL_INTEGER.test(raw)) return null;
-  const parsed = Number(raw);
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  const parsed = parseStrictInteger(raw);
+  return parsed !== null && parsed >= 0 ? parsed : null;
 }
 
 /**

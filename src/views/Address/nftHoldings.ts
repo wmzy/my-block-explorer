@@ -7,7 +7,7 @@
 // In/out is derived from the row's from/to against the viewed address
 // (NOT the backend `direction` field): the pure function stays correct
 // even if a caller feeds rows whose direction tag is stale or absent.
-import { parseDecimalInteger, type SharedTokenClass } from '@/views/Address/holdings';
+import { compareTokenIds, parseDecimalInteger, type SharedTokenClass } from '@/views/Address/holdings';
 import type { TokenTransfer } from '@/services/tokenTransfers';
 
 /** One ERC-1155 id currently held (net > 0) with its exact net amount. */
@@ -51,27 +51,10 @@ export type NftHoldings = {
   unclassifiedTransfers: number;
 };
 
-// Ascending token-id order: numeric ids compare by value and sort before
-// everything else; the remainder compare lexicographically. Twin of
-// holdings.ts's private comparator (same semantics, kept local — the
-// sibling module's export surface is owned by its own callers).
-const DECIMAL_INTEGER = /^\d+$/;
-
-function compareTokenIds(a: string, b: string): number {
-  const aNumeric = DECIMAL_INTEGER.test(a);
-  const bNumeric = DECIMAL_INTEGER.test(b);
-  if (aNumeric && bNumeric) {
-    const aValue = BigInt(a);
-    const bValue = BigInt(b);
-    if (aValue !== bValue) return aValue < bValue ? -1 : 1;
-    return 0;
-  }
-  if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 // Per-(contract, standard) accumulation state. `contract` keeps the
 // first-seen spelling for output; rows group by the lowercased address.
+// Token-id ordering comes from the family-shared comparator in
+// holdings.ts (compareTokenIds).
 type Nft721Group = {
   standard: 'erc721';
   contract: string;

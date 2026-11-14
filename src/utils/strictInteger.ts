@@ -31,6 +31,19 @@ export function parseStrictInteger(value: string | number | undefined): number |
 }
 
 /**
+ * A plain run of decimal digits as an exact bigint, or null when the
+ * input is not one. BigInt('') is 0n and BigInt() also accepts signs,
+ * hex prefixes and surrounding whitespace, so RPC numeric strings
+ * (balances, gas fields, token amounts) must be gated on the same strict
+ * shape as parseStrictInteger — a malformed field reads as "no number",
+ * never a fabricated 0n. Callers that want whitespace tolerance trim
+ * before calling (that divergence stays visible at the call site).
+ */
+export function parseDecimalBigInt(raw: string): bigint | null {
+  return DECIMAL_INTEGER.test(raw) ? BigInt(raw) : null;
+}
+
+/**
  * A JSON-RPC hex QUANTITY (`0x`-prefixed, non-negative) as a safe
  * integer, or null when the value is not one. The canonical reader for
  * every eth_chainId/eth_blockNumber-style answer (the RPC tester, the

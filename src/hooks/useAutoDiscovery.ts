@@ -1,9 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { setApiBase, getStoredManualBase, storeManualBase } from '@/util/apiBase';
+import { DEFAULT_PROBE_PORTS } from '@/config/discovery';
 import { errorMessage } from '@/utils/errorHandler';
 import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
 
-export const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205] as const;
+// Re-exported under the historical name for DiscoveryGate's scanning
+// screen; the list itself is the shared leaf config/discovery.ts (one
+// home with the uninstall CLI's server-running guard).
+export { DEFAULT_PROBE_PORTS as DEFAULT_PORTS };
 const DEFAULT_HOST = 'localhost';
 // Per-probe budget for the port scan. All candidates are probed in
 // parallel, so this is also the whole-scan worst case (~1.5s instead of
@@ -159,7 +163,7 @@ export function useAutoDiscovery() {
   // the old serial scan's preference.
   const discover = useCallback(
     async (
-      ports: readonly number[] = DEFAULT_PORTS,
+      ports: readonly number[] = DEFAULT_PROBE_PORTS,
       host = DEFAULT_HOST,
     ): Promise<ServiceInfo | null> => {
       const attempt = beginAttempt();

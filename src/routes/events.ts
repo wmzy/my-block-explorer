@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { Abi } from 'viem';
 import { createLogger } from '../server/logger';
@@ -78,7 +79,8 @@ const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
   return parsed;
 };
 
-// The :rangeId URL segment, once for all five range routes. Strict decimal
+// The :rangeId URL segment, once for every range route that addresses a
+// specific range (PATCH/DELETE/start/pause/resume). Strict decimal
 // parse (parseStrictInteger): parseInt() accepted a valid prefix, so
 // `…/ranges/3abc` addressed range 3, `…/ranges/0x10` range 16 and
 // `…/ranges/1e3` range 1 — a mutating request could delete, start or
@@ -93,6 +95,28 @@ const readRangeIdParam = (
   return rangeId === null
     ? { error: createApiError(400, 'invalid_range_id', 'rangeId must be a number'), status: 400 }
     : { rangeId };
+};
+
+// The :rangeId routes' shared param prologue, once: chain+address
+// validation first (the same precedence as every other route in this
+// file — chain errors throw HTTPException, address errors return the
+// 400), then the strict rangeId parse. Takes the raw strings (not `c`)
+// so callers keep their route-typed `c.req.param(...)` inference — a
+// generic Context here would widen the params to `string | undefined`.
+const resolveRangeParams = (
+  chainIdStr: string,
+  addressStr: string,
+  rangeIdStr: string,
+): { chainId: number; address: `0x${string}`; rangeId: number } | { error: ApiErrorBody; status: 400 } => {
+  const result = validateChainAndAddress(chainIdStr, addressStr);
+  if ('error' in result) return result;
+  const rangeIdParsed = readRangeIdParam(rangeIdStr);
+  if ('error' in rangeIdParsed) return rangeIdParsed;
+  return {
+    chainId: result.chainId,
+    address: result.address,
+    rangeId: rangeIdParsed.rangeId,
+  };
 };
 
 // Query params shared by the events list and export endpoints. Malformed
@@ -677,13 +701,10 @@ app.patch(
   '/chains/:chainId/contracts/:address/events/ranges/:rangeId',
   requireAdminTokenIfConfigured,
   async c => {
-    const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-    if ('error' in result) return c.json(result.error, result.status);
+    const params = resolveRangeParams(c.req.param('chainId'), c.req.param('address'), c.req.param('rangeId'));
+    if ('error' in params) return c.json(params.error, params.status);
 
-    const { chainId, address } = result;
-    const rangeIdParsed = readRangeIdParam(c.req.param('rangeId'));
-    if ('error' in rangeIdParsed) return c.json(rangeIdParsed.error, rangeIdParsed.status);
-    const { rangeId } = rangeIdParsed;
+    const { chainId, address, rangeId } = params;
 
     try {
       const body = await c.req.json();
@@ -743,13 +764,10 @@ app.delete(
   '/chains/:chainId/contracts/:address/events/ranges/:rangeId',
   requireAdminTokenIfConfigured,
   async c => {
-    const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-    if ('error' in result) return c.json(result.error, result.status);
+    const params = resolveRangeParams(c.req.param('chainId'), c.req.param('address'), c.req.param('rangeId'));
+    if ('error' in params) return c.json(params.error, params.status);
 
-    const { chainId, address } = result;
-    const rangeIdParsed = readRangeIdParam(c.req.param('rangeId'));
-    if ('error' in rangeIdParsed) return c.json(rangeIdParsed.error, rangeIdParsed.status);
-    const { rangeId } = rangeIdParsed;
+    const { chainId, address, rangeId } = params;
 
     try {
       const response = await deleteIndexingRange(chainId, address, rangeId);
@@ -788,88 +806,117 @@ app.delete(
   },
 );
 
+// The start and resume routes are the same request from prologue to tail:
+// both validate the params, read the optional body ABI (swallowing a
+// missing/invalid body), resolve it against the cached contract source,
+// reject while a job is already active or the range is missing, kick the
+// (potentially hours-long) indexing loop in the background and answer the
+// same 202. Only the middle status gate differs — start refuses a
+// completed range, resume requires paused|error — so the per-kind facts
+// live in one table and everything else is shared.
+const START_RESUME_KINDS = {
+  start: {
+    statusRejected: (status: string) => status === 'completed',
+    statusMessage: 'Range is already completed',
+    kick: startIndexingRange,
+    logLabel: 'Start indexing range API error',
+    failureMessage: 'Failed to start indexing range',
+  },
+  resume: {
+    statusRejected: (status: string) => status !== 'paused' && status !== 'error',
+    statusMessage: 'Can only resume paused or errored ranges',
+    kick: resumeIndexingRange,
+    logLabel: 'Resume indexing range API error',
+    failureMessage: 'Failed to resume indexing range',
+  },
+} as const;
+
+const startOrResumeIndexing = async (c: Context, kind: keyof typeof START_RESUME_KINDS) => {
+  const shape = START_RESUME_KINDS[kind];
+
+  // Generic Context widens param() to `string | undefined`; both routes
+  // carry all three params in their patterns, so the fallback only maps
+  // the impossible case onto the same 400 the validators already emit.
+  const params = resolveRangeParams(
+    c.req.param('chainId') ?? '',
+    c.req.param('address') ?? '',
+    c.req.param('rangeId') ?? '',
+  );
+  if ('error' in params) return c.json(params.error, params.status);
+
+  const { chainId, address, rangeId } = params;
+
+  try {
+    let bodyAbi: unknown;
+    try {
+      const body = await c.req.json();
+      bodyAbi = body.abi;
+    } catch {
+      // no body or invalid JSON
+    }
+
+    const abi = await resolveIndexingAbi(bodyAbi, chainId, address);
+
+    if (abi.length === 0) {
+      return respondError(
+        c,
+        400,
+        'abi_unavailable',
+        'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
+      );
+    }
+
+    // Fail fast on invalid states so clients still get actionable 400s
+    // before the (potentially hours-long) indexing work is kicked off.
+    if (getActiveRangeJob(chainId, address, rangeId)) {
+      return respondError(c, 400, 'invalid_state', 'Range is already being indexed');
+    }
+
+    const ranges = await getIndexingRanges(chainId, address);
+    const range = ranges.find(r => r.rangeId === rangeId);
+
+    if (!range) {
+      // Mirrors the pause route: a missing range is a 404 resource state,
+      // while state conflicts (already indexing/completed/not paused)
+      // stay 400.
+      return respondError(c, 404, 'range_not_found', 'Range not found');
+    }
+
+    if (shape.statusRejected(range.status)) {
+      return respondError(c, 400, 'invalid_state', shape.statusMessage);
+    }
+
+    // Indexing (or resuming) a range can run for hours: acknowledge
+    // immediately and let the loop continue in the background. Progress
+    // is observable via the ranges and indexing-status endpoints.
+    void shape.kick(chainId, address, rangeId, abi as Abi).catch(err =>
+      logger.error({ err }, 'Background indexing failed'),
+    );
+
+    c.header('X-Chain-Name', getChainName(chainId));
+
+    return c.json(
+      {
+        chainId,
+        contractAddress: address,
+        rangeId,
+        started: true,
+        status: 'indexing',
+        message: 'Indexing started in background; poll ranges or indexing-status for progress',
+      },
+      202,
+    );
+  } catch (error) {
+    logger.error({ err: error }, shape.logLabel);
+    return respondError(c, 500, 'internal_error', errorMessage(error, shape.failureMessage));
+  }
+};
+
 // POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/start — start indexing
 app.post(
   '/chains/:chainId/contracts/:address/events/ranges/:rangeId/start',
   requireAdminTokenIfConfigured,
-  async c => {
-    const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-    if ('error' in result) return c.json(result.error, result.status);
-
-    const { chainId, address } = result;
-    const rangeIdParsed = readRangeIdParam(c.req.param('rangeId'));
-    if ('error' in rangeIdParsed) return c.json(rangeIdParsed.error, rangeIdParsed.status);
-    const { rangeId } = rangeIdParsed;
-
-    try {
-      let bodyAbi: unknown;
-      try {
-        const body = await c.req.json();
-        bodyAbi = body.abi;
-      } catch {
-        // no body or invalid JSON
-      }
-
-      const abi = await resolveIndexingAbi(bodyAbi, chainId, address);
-
-      if (abi.length === 0) {
-        return respondError(
-          c,
-          400,
-          'abi_unavailable',
-          'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
-        );
-      }
-
-      // Fail fast on invalid states so clients still get actionable 400s
-      // before the (potentially hours-long) indexing work is kicked off.
-      if (getActiveRangeJob(chainId, address, rangeId)) {
-        return respondError(c, 400, 'invalid_state', 'Range is already being indexed');
-      }
-
-      const ranges = await getIndexingRanges(chainId, address);
-      const range = ranges.find(r => r.rangeId === rangeId);
-
-      if (!range) {
-        // Mirrors the pause route: a missing range is a 404 resource state,
-        // while state conflicts (already indexing/completed) stay 400.
-        return respondError(c, 404, 'range_not_found', 'Range not found');
-      }
-
-      if (range.status === 'completed') {
-        return respondError(c, 400, 'invalid_state', 'Range is already completed');
-      }
-
-      // Indexing a range can run for hours: acknowledge immediately and let
-      // the loop continue in the background. Progress is observable via the
-      // ranges and indexing-status endpoints.
-      void startIndexingRange(chainId, address, rangeId, abi as Abi).catch(err =>
-        logger.error({ err }, 'Background indexing failed'),
-      );
-
-      c.header('X-Chain-Name', getChainName(chainId));
-
-      return c.json(
-        {
-          chainId,
-          contractAddress: address,
-          rangeId,
-          started: true,
-          status: 'indexing',
-          message: 'Indexing started in background; poll ranges or indexing-status for progress',
-        },
-        202,
-      );
-    } catch (error) {
-      logger.error({ err: error }, 'Start indexing range API error');
-      return respondError(
-        c,
-        500,
-        'internal_error',
-        errorMessage(error, 'Failed to start indexing range'),
-      );
-    }
-  },
+  async c => startOrResumeIndexing(c, 'start'),
 );
 
 // POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/pause — pause indexing
@@ -877,13 +924,10 @@ app.post(
   '/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause',
   requireAdminTokenIfConfigured,
   async c => {
-    const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-    if ('error' in result) return c.json(result.error, result.status);
+    const params = resolveRangeParams(c.req.param('chainId'), c.req.param('address'), c.req.param('rangeId'));
+    if ('error' in params) return c.json(params.error, params.status);
 
-    const { chainId, address } = result;
-    const rangeIdParsed = readRangeIdParam(c.req.param('rangeId'));
-    if ('error' in rangeIdParsed) return c.json(rangeIdParsed.error, rangeIdParsed.status);
-    const { rangeId } = rangeIdParsed;
+    const { chainId, address, rangeId } = params;
 
     try {
       const isActive = getActiveRangeJob(chainId, address, rangeId);
@@ -973,84 +1017,7 @@ app.post(
 app.post(
   '/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume',
   requireAdminTokenIfConfigured,
-  async c => {
-    const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-    if ('error' in result) return c.json(result.error, result.status);
-
-    const { chainId, address } = result;
-    const rangeIdParsed = readRangeIdParam(c.req.param('rangeId'));
-    if ('error' in rangeIdParsed) return c.json(rangeIdParsed.error, rangeIdParsed.status);
-    const { rangeId } = rangeIdParsed;
-
-    try {
-      let bodyAbi: unknown;
-      try {
-        const body = await c.req.json();
-        bodyAbi = body.abi;
-      } catch {
-        // no body or invalid JSON
-      }
-
-      const abi = await resolveIndexingAbi(bodyAbi, chainId, address);
-
-      if (abi.length === 0) {
-        return respondError(
-          c,
-          400,
-          'abi_unavailable',
-          'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
-        );
-      }
-
-      // Fail fast on invalid states so clients still get actionable 400s
-      // before the (potentially hours-long) indexing work is kicked off.
-      if (getActiveRangeJob(chainId, address, rangeId)) {
-        return respondError(c, 400, 'invalid_state', 'Range is already being indexed');
-      }
-
-      const ranges = await getIndexingRanges(chainId, address);
-      const range = ranges.find(r => r.rangeId === rangeId);
-
-      if (!range) {
-        // Mirrors the pause route: a missing range is a 404 resource state,
-        // while state conflicts (already indexing / not paused) stay 400.
-        return respondError(c, 404, 'range_not_found', 'Range not found');
-      }
-
-      if (range.status !== 'paused' && range.status !== 'error') {
-        return respondError(c, 400, 'invalid_state', 'Can only resume paused or errored ranges');
-      }
-
-      // Resuming re-runs the remaining (potentially hours-long) indexing work:
-      // acknowledge immediately and let the loop continue in the background.
-      // Progress is observable via the ranges and indexing-status endpoints.
-      void resumeIndexingRange(chainId, address, rangeId, abi as Abi).catch(err =>
-        logger.error({ err }, 'Background indexing failed'),
-      );
-
-      c.header('X-Chain-Name', getChainName(chainId));
-
-      return c.json(
-        {
-          chainId,
-          contractAddress: address,
-          rangeId,
-          started: true,
-          status: 'indexing',
-          message: 'Indexing started in background; poll ranges or indexing-status for progress',
-        },
-        202,
-      );
-    } catch (error) {
-      logger.error({ err: error }, 'Resume indexing range API error');
-      return respondError(
-        c,
-        500,
-        'internal_error',
-        errorMessage(error, 'Failed to resume indexing range'),
-      );
-    }
-  },
+  async c => startOrResumeIndexing(c, 'resume'),
 );
 
 export default app;

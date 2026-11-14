@@ -14,7 +14,15 @@ const app = new Hono();
 // the x-admin-token header is enforced. Publicly reachable bindings are
 // handled earlier — the startup check refuses to boot this app on a
 // non-loopback HOST unless ALLOW_INSECURE_START=1 (see src/startupChecks.ts).
-app.use('*', requireAdminTokenIfConfigured);
+//
+// The pattern MUST be the sub-app's own route paths, never '*': Hono
+// hoists a mounted sub-app's use('*') to <base>/* on the PARENT (here
+// /debug/*), where it would swallow every sibling route mounted after
+// this one and turn unknown paths into 403s instead of 404s — the exact
+// leak sql.ts/ops.ts forbid after the hoisting incident (see
+// tests/unit/mountGateIsolation.test.ts). '/db/*' covers every route this
+// sub-app registers (POST /db/query is its whole surface).
+app.use('/db/*', requireAdminTokenIfConfigured);
 
 /**
  * POST /debug/db/query

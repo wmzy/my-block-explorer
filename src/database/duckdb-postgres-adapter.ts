@@ -52,15 +52,34 @@ export function rewriteInsertDefaultTokens(sql: string): string {
   return out;
 }
 
+// Unique-violation core (pg class 23505): the adapter's mapped `code`
+// property when present, or the wrapped '[23505] …' message / the raw
+// DuckDB constraint phrasing. Exported as the ONE row-dedup predicate —
+// EventIndexingService classifies its per-row retry skips with this
+// instead of a local twin.
+export function isUniqueViolation(error: unknown): boolean {
+  if (
+    error !== null &&
+    typeof error === 'object' &&
+    (error as { code?: unknown }).code === '23505'
+  ) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /duplicate key|unique constraint|\[23505\]/i.test(message);
+}
+
 // Duplicate-class errors: DuckDB catalog conflicts ("Table with name x already
 // exists") and PK/unique violations — the signature of losing a race against
-// another process booting on the same fresh database. Deliberately excludes
-// other constraint classes (not-null 23502, foreign-key 23503).
+// another process booting on the same fresh database. The unique-violation
+// core above plus the catalog-race arms, which stay adapter-local because
+// only the migration paths (CREATE TABLE races, journal insert races) need
+// them. Deliberately excludes other constraint classes (not-null 23502,
+// foreign-key 23503).
 export function isDuplicateClassError(error: unknown): boolean {
+  if (isUniqueViolation(error)) return true;
   const message = error instanceof Error ? error.message : String(error ?? '');
-  return /already exists|already have|duplicate key|primary key constraint|unique constraint/i.test(
-    message,
-  );
+  return /already exists|already have|primary key constraint/i.test(message);
 }
 
 /**

@@ -32,6 +32,7 @@ import {
   formatRelativeTime,
 } from '@/utils/format';
 import { parseBlockNumberParam, parseChainIdParam } from '@/utils/chainParam';
+import { parseDecimalBigInt } from '@/utils/strictInteger';
 import { errorMessage } from '@/utils/errorHandler';
 import { deriveSlotEpochFromIso } from '@/utils/slotEpoch';
 import { createRpcClient } from '@/utils/realTimeData';
@@ -56,17 +57,13 @@ const FUTURE_BLOCK_POLL_BUDGET_MS = 5 * 60_000;
 // denominator (real blocks render >100% "of cap").
 const BLOB_GAS_PER_BLOB = 131_072n;
 
-// Decimal-integer RPC strings parsed BigInt-safely. BigInt('') is 0n, so
-// empty/whitespace/non-numeric values must be rejected explicitly — an
+// Decimal-integer RPC strings parsed BigInt-safely via the shared strict
+// parser (utils/strictInteger), with this view's own tolerance layered
+// on top: surrounding whitespace is trimmed (historical behavior).
+// BigInt('') is 0n, so empty/non-numeric values must stay undefined — an
 // absent field rendered as zero would be a fabricated number.
-const parseDecimalInteger = (value: string): bigint | undefined => {
-  if (!/^\d+$/.test(value.trim())) return undefined;
-  try {
-    return BigInt(value);
-  } catch {
-    return undefined;
-  }
-};
+const parseDecimalInteger = (value: string): bigint | undefined =>
+  parseDecimalBigInt(value.trim()) ?? undefined;
 
 // baseFeePerGas × gasUsed in wei. Both are decimal-string integers per the
 // RpcBlock contract; anything unparseable collapses to undefined so the

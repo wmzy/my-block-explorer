@@ -13,27 +13,34 @@ export type TokenHolding =
   | { kind: 'erc1155'; token: string; tokenId: string; net: bigint; transferCount: number }
   | { kind: 'unclassified'; token: string; net: bigint; transferCount: number };
 
-// Strict decimal-integer parsing: rejects empty strings, signs, and 0x hex.
-// Exported for the token-overview holders computation (same strictness).
-const DECIMAL_INTEGER = /^\d+$/;
+// Strict decimal-integer parsing: rejects empty strings, signs, and 0x
+// hex (no trim — the sibling token aggregators rely on that strictness).
+// The ONE implementation is utils/strictInteger's parseDecimalBigInt,
+// imported under this module's long-standing name (used internally here
+// AND re-exported for the aggregators that import it from this module:
+// balanceHistory, nftHoldings, tokenOverview, tokenMath, nftItems).
+import { parseDecimalBigInt as parseDecimalInteger } from '@/utils/strictInteger';
 
-export function parseDecimalInteger(raw: string): bigint | null {
-  return DECIMAL_INTEGER.test(raw) ? BigInt(raw) : null;
-}
+export { parseDecimalInteger };
 
 /**
- * Ascending token-id order: numeric ids compare by value and sort before
- * everything else; the remainder compare lexicographically.
+ * Ascending token-id order: numeric ids compare by value (BigInt-exact)
+ * and sort before everything else; the remainder compare lexicographically.
+ * Numericness is the shared strict decimal shape (parseDecimalInteger
+ * delegates to utils/strictInteger), so the value and the classification
+ * come from the same ONE definition. Exported for the sibling nftHoldings
+ * module — this file is the views/Address family's shared home (same role
+ * as its parseDecimalInteger re-export).
  */
-function compareTokenIds(a: string, b: string): number {
-  const aNumeric = DECIMAL_INTEGER.test(a);
-  const bNumeric = DECIMAL_INTEGER.test(b);
-  if (aNumeric && bNumeric) {
-    const aValue = BigInt(a);
-    const bValue = BigInt(b);
+export function compareTokenIds(a: string, b: string): number {
+  const aValue = parseDecimalInteger(a);
+  const bValue = parseDecimalInteger(b);
+  if (aValue !== null && bValue !== null) {
     if (aValue !== bValue) return aValue < bValue ? -1 : 1;
     return 0;
   }
+  const aNumeric = aValue !== null;
+  const bNumeric = bValue !== null;
   if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
   return a < b ? -1 : a > b ? 1 : 0;
 }

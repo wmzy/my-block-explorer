@@ -9,6 +9,90 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-14 duplication review fix wave round 9 (4 read-only scouts +
+  4 concurrent fix agents + integration)** — round 9; 21 findings
+  adjudicated (16 fixed, 5 deferred), net −22 lines / 45 files (the line
+  count is dominated by helper extraction replacing inline copies). All
+  verified: tsc 0 errors, eslint 0 errors (112 warnings, pre-existing
+  classes), `vitest --changed --maxWorkers=4` 3551 tests green,
+  `pnpm build` green. **Test-isolation fix (incident-driven)** — a third
+  consecutive wave found `data/blockchain.db` journal-trashed
+  (non-contiguous migration ids, cause-less Failed query on every read)
+  after `vitest --changed --maxWorkers=4`: suites that transitively
+  import the database graph without mocking '@/database/*' (the composed
+  route-table/gate-isolation tests) instantiate the real adapter on the
+  DEV database at import time, and parallel workers are concurrent
+  DuckDB writers. tests/setup.ts now defaults DATABASE_URL (only when
+  unset) to a per-worker temp file `be-vitest-<pid>.db` — explicit
+  stubs and CI values win, mocked suites unaffected, dev DB never
+  touched by tests again (recovery per the documented recipe: db set
+  aside, fresh migrate, labels reseed). Live smoke on the built server
+  after recovery: /functions on WETH via the consolidated
+  resolveTargetAbi, shared-validator 400, events ranges list, and
+  range_not_found 404 through the merged start/resume core.
+  **Dead code deleted** — the `DatabaseManager` re-export in
+  database/init.ts (AGENTS.md had claimed the 2026-11-09 wave removed it —
+  doc and code disagreed); `types/rpc.ts` `RpcConfig`/`RpcStatus`
+  (shape-diverged from the live rpcConfigService RpcConfig; only
+  RpcErrorInfo had an importer); `getChainExplorerUrl` (config/chains);
+  `UserRpcConfig.rpcBackups`/`.rateLimit` (write-only-undefined / never
+  read); `views/Contract/styles.ts` `linkStyle` (every consumer imports
+  DataTable's mono variant). **Route consolidations** —
+  contracts.ts read/simulate/estimate-gas carried three ~30-line
+  near-identical blocks plus a fourth proxy-resolution partial →
+  `resolveTargetAbi` + `validateInteractionBody` (wire byte-identical);
+  events.ts start/resume were ~80-line structural clones →
+  `START_RESUME_KINDS` table + `startOrResumeIndexing(c, kind)` core +
+  `resolveRangeParams` prologue shared by all five :rangeId routes;
+  stats 503 and rate-limit 429 moved onto the canonical createApiError
+  envelope (additive statusCode/timestamp; retryAfterSeconds kept);
+  sql.ts 500 code `'Schema Listing Failed'` → `schema_listing_failed`;
+  debug.ts's `app.use('*')` gate scoped to `/db/*` per the mount-hoisting
+  invariant (unknown /debug/* now 404, not 403, under ADMIN_TOKEN).
+  **Canonical modules born** — paramParsing exports
+  `parseFormArgsForBuild` + the int/array type patterns (castCommand +
+  viemScript deleted their verbatim ~30-line shared preambles and regex
+  twins); `strictInteger.parseDecimalBigInt` (chainParam, validation's
+  parseChainAndAddressParams, holdings, Blocks/Detail, and via re-export
+  nftHoldings all delegate — five hand-rolled decimal walks gone, and
+  holdings.ts exports the family's `compareTokenIds` so nftHoldings's
+  twin died too); adapter exports `isUniqueViolation` (the 23505 core
+  EventIndexingService's local `isDuplicateRowError` duplicated);
+  `isValidAddress` has one definition (utils/address; validation
+  re-exports); `getEffectiveRpcUrl` actually used by its two natural
+  callers (RpcManager, WatchService); `src/config/discovery.ts` +
+  `src/config/uninstallConfirm.ts` (import-free leaves killing the
+  discovery-port and confirm-phrase twins; opsSummary is
+  browser-imported, so the phrase could not live in selfDestruct);
+  `components/ui/listToolbar.ts` (Contracts/Tokens toolbar quartet,
+  byte-identical), `components/ui/RefreshButton.tsx` (5 list views),
+  `components/ui/wrongRouteCopy.ts` (`NO_ON_CHAIN_CODE_CAVEAT`, the
+  verbatim Contract/Token string); `internalTxnsShared` gains
+  `RetryRow` + `TRUNCATED_LIST_NOTE`; Contract/styles noticeBox trio
+  composes `cx(badgeX, noticeShape)`. **Logging** — AddressService's
+  emoji `console.log` traces and TransactionService's console.warn/error
+  migrated to their existing pino `createLogger` loggers; AddressService
+  dropped off eslint's no-console allowlist. **db barrel unified** —
+  server.ts, AddressScanService, EventIndexingService, EventExportService,
+  selfDestruct, providerCeilings all import `db` from database/init
+  (drizzle.ts stays the adapter+schema owner; vitest mocks key by
+  resolved module id, so the init re-export flows the drizzle mocks).
+  **Conventions pinned**: (1) a shared route-helper must take the raw
+  strings, not `c: Context` — the generic annotation widens
+  `c.req.param()` to `string | undefined` and breaks compilation at
+  every call site the route-typed inference used to cover (map the
+  impossible case to the same 400 instead); (2) scout structural-claim
+  verification pays for itself — the "three wrong-route verdict cards
+  share one skeleton" finding was one-third wrong on inspection
+  (Address's card is the checksum-guidance shape), so only the verbatim
+  string consolidated; (3) opsSummary.ts is browser-imported (views/Ops)
+  — constants shared with server-only modules must live in an
+  import-free leaf, not in either importer. **Deferred (unchanged
+  list)**: in-flight-dedup Maps, scan ladders, Address-view
+  micro-extractions, card-recipe css family, mono-right-row family,
+  SearchService result-scaffolding, errorHandler console (browser-graph
+  safety).
+
 - **2026-11-14 duplication review fix wave round 8 (4 read-only scouts +
   6 concurrent fix agents + integration)** — the round-8 review's 27
   findings adjudicated (16 fixed, 6 newly deferred, 5 verified

@@ -20,7 +20,7 @@
 // whether every existing target was actually removed.
 import { join } from 'node:path';
 
-import { db } from '../database/drizzle';
+import { db } from '../database/init';
 import {
   collectTargetStats,
   pruneEmptyDirs,
@@ -34,8 +34,8 @@ import { watchService } from './WatchService';
 /** How long the 202 response gets to reach the client before sockets die. */
 export const SELF_DESTRUCT_GRACE_MS = 1500;
 
-/** The exact body string POST /api/ops/uninstall demands (twin in services/opsSummary.ts). */
-export const UNINSTALL_CONFIRM_PHRASE = 'uninstall';
+/** Re-exported for routes/ops.ts; the constant lives in config/uninstallConfirm.ts (shared with the browser-side opsSummary). */
+export { UNINSTALL_CONFIRM_PHRASE } from '../config/uninstallConfirm';
 
 type Closer = () => Promise<void>;
 

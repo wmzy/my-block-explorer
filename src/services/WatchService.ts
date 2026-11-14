@@ -35,7 +35,7 @@ import type { Log } from 'viem';
 import { db, watchSubscriptions, type WatchSubscriptionRecord } from '../database/init';
 import { rpcManager } from './RpcManager';
 import { signatureService } from './SignatureService';
-import { getDefaultRpcUrl } from '../config/chains';
+import { getEffectiveRpcUrl } from '../config/chains';
 import { getExternalTxLinks } from '../config/externalTools';
 import {
   buildDiscordMessage,
@@ -419,9 +419,10 @@ export class WatchService {
   ): Promise<WatchUpsertResult> {
     // Gate 1: the chain must have a usable RPC config — otherwise the
     // subscription could never be served. This names the missing config
-    // explicitly (the fix is an RPC URL away).
-    const userUrl = rpcManager.getUserRpcConfig(chainId)?.customRpcUrl;
-    const effectiveUrl = userUrl ?? getDefaultRpcUrl(chainId);
+    // explicitly (the fix is an RPC URL away). getEffectiveRpcUrl is the
+    // canonical custom-?-default fallback (config/chains.ts) — no local
+    // re-implementation.
+    const effectiveUrl = getEffectiveRpcUrl(chainId, rpcManager.getUserRpcConfig(chainId));
     if (effectiveUrl === '') {
       return {
         ok: false,

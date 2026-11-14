@@ -1,10 +1,10 @@
 // Validation utility functions
 
-import { isAddress, isHash } from 'viem';
+import { isHash } from 'viem';
 import { normalize } from 'viem/ens';
 
 import { isChainSupported } from '../config/chains';
-import { addressVerdict } from './address';
+import { addressVerdict, isValidAddress } from './address';
 import { parseStrictInteger } from './strictInteger';
 
 /**
@@ -26,23 +26,17 @@ import { parseStrictInteger } from './strictInteger';
 export { parseStrictInteger };
 
 /**
- * Validate an Ethereum address
+ * Validate an Ethereum address. The definition lives in ./address (the
+ * shared address leaf); re-exported here because this module is the
+ * canonical import site.
  */
-export function isValidAddress(address: string): boolean {
-  return isAddress(address);
-}
+export { isValidAddress };
 
 /**
- * Validate a transaction hash
+ * Validate a transaction hash (block hashes share the same 32-byte shape
+ * and the same isHash check, so search detection needs no second copy).
  */
 export function isValidTransactionHash(hash: string): boolean {
-  return isHash(hash);
-}
-
-/**
- * Validate a block hash
- */
-export function isValidBlockHash(hash: string): boolean {
   return isHash(hash);
 }
 
@@ -214,8 +208,8 @@ export function detectSearchType(input: string): 'address' | 'hash' | 'block' | 
     return 'address';
   }
 
-  // Hash detection (transaction or block hash)
-  if (isValidTransactionHash(trimmed) || isValidBlockHash(trimmed)) {
+  // Hash detection (transaction or block hash — one isHash shape)
+  if (isValidTransactionHash(trimmed)) {
     return 'hash';
   }
 
@@ -294,10 +288,10 @@ export function parseChainAndAddressParams(
   addressRaw: string,
 ): ParsedChainAndAddressParams {
   // Same two checks getValidatedChainId performs: strict decimal shape
-  // (parseInt accepted '1abc' as 1, silently addressing the wrong chain),
-  // then registry membership.
-  const chainId = Number(chainIdRaw);
-  if (!Number.isSafeInteger(chainId) || chainId <= 0 || !/^\d+$/.test(chainIdRaw)) {
+  // via parseStrictInteger (parseInt accepted '1abc' as 1, silently
+  // addressing the wrong chain), then registry membership.
+  const chainId = parseStrictInteger(chainIdRaw);
+  if (chainId === null || chainId <= 0) {
     return { error: 'invalid_chain_id', message: 'Invalid chain ID' };
   }
   if (!isChainSupported(chainId)) {

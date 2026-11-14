@@ -1,7 +1,6 @@
 import { createPublicClient, http, PublicClient } from 'viem';
 import {
   getChainInfo,
-  getDefaultRpcUrl,
   getEffectiveRpcUrl,
   type UserRpcConfig,
 } from '../config/chains';
@@ -12,15 +11,12 @@ import { errorMessage } from '../utils/errorHandler';
 const logger = createLogger('rpc-manager');
 
 // Default transport tuning shared by every config row the manager loads
-// and by client creation: 10s request timeout, 3 retries, 100 req/s
-// ceiling. The load paths always plant the full set; client creation
-// honors a user config's timeout/retryCount overrides when present.
-// rateLimit is NOT overridable at client creation today (only the load
-// path plants it) — a possible follow-up, deliberately left unchanged.
+// and by client creation: 10s request timeout, 3 retries. The load paths
+// always plant the full set; client creation honors a user config's
+// timeout/retryCount overrides when present.
 const DEFAULT_RPC_OPTIONS = {
   timeout: 10_000,
   retryCount: 3,
-  rateLimit: 100,
 } as const;
 
 // Log-safe RPC endpoint identity: provider URLs routinely embed API keys
@@ -85,7 +81,6 @@ export class RpcManager {
         configs.set(config.chainId, {
           chainId: config.chainId,
           customRpcUrl: config.url ?? undefined,
-          rpcBackups: undefined,
           ...DEFAULT_RPC_OPTIONS,
         });
       }
@@ -120,7 +115,6 @@ export class RpcManager {
           configs.set(row.chainId, {
             chainId: row.chainId,
             customRpcUrl: row.rpcUrl,
-            rpcBackups: undefined,
             ...DEFAULT_RPC_OPTIONS,
           });
         }
@@ -217,10 +211,12 @@ export class RpcManager {
       throw new Error(`Unsupported chain: ${chainId}`);
     }
 
-    // Get the effective RPC URL (user config first, otherwise the viem default)
+    // Get the effective RPC URL (user config first, otherwise the viem
+    // default) via the canonical helper — no re-implementation of the
+    // custom-??-default fallback.
     const userConfig = this.userConfigs.get(chainId);
     const customRpcUrl = userConfig?.customRpcUrl;
-    const rpcUrl = customRpcUrl ?? getDefaultRpcUrl(chainId);
+    const rpcUrl = getEffectiveRpcUrl(chainId, userConfig);
 
     // Host + discriminator only: user URLs embed provider API keys and
     // even defaults are unnecessary detail — chainId identifies the client.

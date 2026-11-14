@@ -1,7 +1,8 @@
 // `my-block-explorer uninstall` — data cleanup, shared by the CLI and the
 // in-server flow (POST /api/ops/uninstall via services/selfDestruct.ts).
 // Import-direction invariant: this module must never import server-graph
-// modules (only the import-free leaf database/dbPath) and must never be
+// modules (only the import-free leaves database/dbPath and config/
+// discovery) and must never be
 // re-exported through the src/utils barrel (the browser bundle can pull
 // that) — the CLI imports it BEFORE deciding to start a server, and any
 // server-graph import would construct the DuckDB adapter, whose
@@ -23,6 +24,7 @@ import { readdir, rm, rmdir, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parseMainDbPath } from './database/dbPath';
+import { DEFAULT_PROBE_PORTS } from './config/discovery';
 import { parseStrictInteger } from './utils/strictInteger';
 import { formatFileSize } from './utils/format';
 import { errorMessage } from './utils/errorHandler';
@@ -74,8 +76,13 @@ export type UninstallResult = {
   runningPorts: number[];
 };
 
-/** Ports the frontend's auto-discovery scans — where our server lives. */
-export const DEFAULT_PROBE_PORTS: readonly number[] = [8201, 8202, 8203, 8204, 8205];
+/**
+ * Ports the frontend's auto-discovery scans — where our server lives.
+ * One home (config/discovery.ts, an import-free leaf) shared with the
+ * browser hook; re-exported here because the CLI's server-running guard
+ * consumes the same list.
+ */
+export { DEFAULT_PROBE_PORTS };
 
 /** Probe ports + the PORT env override, de-duplicated, ascending. */
 export function defaultProbePorts(envPort: string | undefined): number[] {

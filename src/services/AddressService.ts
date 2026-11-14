@@ -558,13 +558,13 @@ const createAddressService = (deps: AddressServiceDeps) => {
             persistentData.implementationAddress = sourceInfo.implementationAddress;
           }
         } catch (error) {
-          console.warn(`Failed to get contract source from cache for ${address}:`, error);
+          logger.warn({ err: error, address }, 'Failed to get contract source from cache');
         }
       }
 
       return persistentData;
     } catch (error) {
-      console.warn(`Failed to get persistent data from DB:`, error);
+      logger.warn({ err: error }, 'Failed to get persistent data from DB');
       return null;
     }
   };
@@ -593,7 +593,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
           },
         });
     } catch (error) {
-      console.warn('Failed to save persistent data to DB:', error);
+      logger.warn({ err: error }, 'Failed to save persistent data to DB');
     }
   };
 
@@ -605,11 +605,11 @@ const createAddressService = (deps: AddressServiceDeps) => {
       try {
         const cached = await getPersistentDataFromDB(chainId, address);
         if (cached) {
-          console.log(`📋 Using cached persistent data for ${address}`);
+          logger.debug({ address }, 'Using cached persistent data');
           return cached;
         }
 
-        console.log(`🔍 Fetching persistent data for ${address}`);
+        logger.debug({ address }, 'Fetching persistent data');
 
         const client = await rpcManager.getClient(chainId);
 
@@ -617,15 +617,16 @@ const createAddressService = (deps: AddressServiceDeps) => {
         try {
           code = await client.getCode({ address });
         } catch (error) {
-          console.warn(`Failed to get contract code for ${address}:`, error);
+          logger.warn({ err: error, address }, 'Failed to get contract code');
           throw new Error(
             `Failed to determine contract status for ${address}: ${errorMessage(error)}`,
             { cause: error },
           );
         }
         const isContract = codeVerdict(code) !== 'eoa';
-        console.log(
-          `🔍 Contract code check for ${address}: ${isContract ? 'CONTRACT' : 'EOA'} (code length: ${code?.length ?? 0})`,
+        logger.debug(
+          { address, isContract, codeLength: code?.length ?? 0 },
+          'Contract code check',
         );
 
         const persistentData: PersistentAddressData = { isContract };
@@ -642,7 +643,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
               persistentData.contractCreator = creationInfo.creator;
             }
           } catch (error) {
-            console.warn(`Failed to get contract creation info for ${address}:`, error);
+            logger.warn({ err: error, address }, 'Failed to get contract creation info');
           }
 
           try {
@@ -657,18 +658,18 @@ const createAddressService = (deps: AddressServiceDeps) => {
               persistentData.implementationAddress = sourceInfo.implementationAddress;
             }
           } catch (error) {
-            console.warn(`Failed to get contract source for ${address}:`, error);
+            logger.warn({ err: error, address }, 'Failed to get contract source');
           }
         }
 
         persistentData.firstSeenTimestamp = new Date();
 
         await savePersistentDataToDB(chainId, address, persistentData);
-        console.log(`✅ Cached persistent data to DB for ${address}`);
+        logger.debug({ address }, 'Cached persistent data to DB');
 
         return persistentData;
       } catch (error) {
-        console.error(`Failed to get persistent data for ${address}:`, error);
+        logger.error({ err: error, address }, 'Failed to get persistent data');
         throw error;
       }
     },

@@ -11,6 +11,7 @@ import { z } from 'zod';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Button } from '@/components/ui/Button';
+import { RefreshButton } from '@/components/ui/RefreshButton';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
@@ -345,14 +346,7 @@ export default function TransactionsList() {
                 Show latest
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={refreshQuery.fetching}
-            >
-              {refreshQuery.fetching ? 'Refreshing…' : '↻ Refresh'}
-            </Button>
+            <RefreshButton onClick={handleRefresh} fetching={refreshQuery.fetching} />
           </div>
         </div>
 

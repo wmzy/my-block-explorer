@@ -1823,8 +1823,7 @@ pnpm typecheck           # tsc --noEmit
   "Per-Chain Event Databases" section is rewritten to "Single Main Database"),
   17 dead exports in `config/chains.ts` (incl. the duplicated
   `data/chains/{type}/{name}-{id}.db` formula, dead with them — `data/chains/`
-  survives only as a legacy dir uninstall/ops enumerate), the
-  `DatabaseManager` alias in `database/init`, the never-called
+  survives only as a legacy dir uninstall/ops enumerate), the never-called
   `registerAbiEvents`/`getEventSelectorFromName`/`decodeEventData` trio in
   `utils/events.ts`, and the never-read `SortingPerformanceMonitor` (EventTable's
   perf panel now shows per-sort facts from the sorter's own metrics).
@@ -2196,3 +2195,81 @@ pnpm typecheck           # tsc --noEmit
   dbCountString.test.ts (which scripted the OLD `{count}` row shape) is
   deleted with its wire contract (numeric totals) re-pinned against the
   real adapter in count-normalization-duckdb.test.ts.
+
+- **2026-11-14 duplication review fix wave round 9 (4 scouts + 4 fix agents +
+  integration)** — 21 findings adjudicated (16 fixed, 5 deferred); 45 files,
+  tsc 0, eslint 0 errors (112 warnings), `vitest --changed --maxWorkers=4`
+  3551 green, `pnpm build` green, live curl smoke on the built server.
+  **Dead** — `DatabaseManager` re-export (database/init.ts; the 2026-11-09
+  KB note claiming its deletion was WRONG — verify deletions, not reports),
+  types/rpc.ts `RpcConfig`/`RpcStatus` (shape-diverged from the live
+  rpcConfigService RpcConfig), `getChainExplorerUrl`,
+  `UserRpcConfig.rpcBackups`/`.rateLimit`, Contract/styles.ts `linkStyle`
+  (all real consumers import DataTable's mono variant). **Canonicals** —
+  `paramParsing.parseFormArgsForBuild` + exported int/array patterns
+  (castCommand/viemScript preambles gone); `strictInteger.parseDecimalBigInt`
+  (FIVE hand-rolled decimal walks now delegate: chainParam, validation,
+  holdings, Blocks/Detail, nftHoldings; holdings.ts exports the family
+  `compareTokenIds`); adapter `isUniqueViolation` (23505 core; EIS local
+  twin deleted, `isDuplicateClassError` = core ∨ catalog-race arms);
+  `isValidAddress` single definition in utils/address; config leaves
+  `discovery.ts` + `uninstallConfirm.ts`; `components/ui/listToolbar.ts`,
+  `RefreshButton`, `wrongRouteCopy.NO_ON_CHAIN_CODE_CAVEAT`;
+  `internalTxnsShared.RetryRow`/`TRUNCATED_LIST_NOTE`; Contract/styles
+  noticeBox = `cx(badgeX, noticeShape)`. **Routes** — contracts.ts
+  interaction trio → `resolveTargetAbi` + `validateInteractionBody`;
+  events.ts start/resume clones → `START_RESUME_KINDS` +
+  `startOrResumeIndexing(c, kind)` + `resolveRangeParams` (all five
+  :rangeId routes); stats 503 + rate-limit 429 on the canonical envelope
+  (429 keeps `retryAfterSeconds`); sql 500 code `schema_listing_failed`;
+  debug gate scoped `/db/*` (unknown /debug/* now 404 not 403 under
+  ADMIN_TOKEN — the mount-hoisting rule). **Logging** — AddressService
+  emoji console.log traces + TransactionService console sites → pino
+  createLogger (both already HAD a logger); AddressService removed from
+  eslint's no-console allowlist. **db barrel** — ALL services + server.ts
+  now import `db` from `../database/init` (drizzle.ts remains the
+  adapter+schema owner; vitest mocks by resolved module id so the
+  `vi.mock('@/database/drizzle')` set still flows through init's
+  re-export — pinned empirically by the drizzle-mock test set). **Rules
+  pinned**: (1) a shared route helper must take the RAW STRINGS, not
+  `c: Context` — the generic annotation widens `c.req.param()` to
+  `string | undefined` and breaks every call site the route-typed
+  inference covered; when a core genuinely needs the generic Context,
+  map the impossible-undefined onto the same 400 (`?? ''`). (2) Scout
+  structural claims need agent-side re-inspection: the "three identical
+  verdict cards" finding was one-third wrong (Address's card is the
+  checksum-guidance shape, not the InfoGrid skeleton) — only the
+  verbatim string consolidated. (3) opsSummary.ts is browser-imported
+  (views/Ops.tsx): constants shared with server-only modules live in an
+  import-free leaf (config/uninstallConfirm.ts), never in either
+  importer. **Deferred (standing list + additions)**: in-flight-dedup
+  Maps, scan ladders, Address-view micro-extractions, card-recipe css
+  family, mono-right-row family (7 sites), SearchService
+  result-scaffolding, errorHandler console.warn (browser-graph safety —
+  it is imported by contractInteraction; adding server/logger would drag
+  pino into browser bundles).
+- **2026-11-14 vitest dev-DB isolation (round-9 integration incident)** —
+  the DuckDB journal was found TRASHED for the THIRD consecutive wave
+  (non-contiguous `drizzle.__drizzle_migrations` ids, 0001 CREATE replay
+  every boot, cause-less Failed query on every read). Root cause finally
+  proven this round: suites that transitively import the database graph
+  WITHOUT mocking '@/database/drizzle' or '@/database/init' (e.g. the
+  composed route-table test app.test.tsx via contractSourceLoader, and
+  mountGateIsolation via routes/ops) instantiate the REAL adapter on the
+  default `data/blockchain.db` at import time; `vitest --maxWorkers=4`
+  puts two such suites in different workers = concurrent DuckDB writers
+  = journal corruption. (Round 8 blamed a server-under-vitest overlap —
+  that was one instance; the workers themselves were the repeat
+  trasher.) **Fix**: tests/setup.ts defaults
+  `process.env.DATABASE_URL` (only when unset — explicit stubs and CI
+  values win) to `duckdb://<tmpdir>/be-vitest-<pid>.db`, one file per
+  worker process. Verified: mountGateIsolation no longer creates
+  data/blockchain.db; full suite green; the real dev DB recreated fresh
+  on next server boot (labels reseed). **Rules pinned**: (1) any new
+  test that imports the api-app/services graph must either mock
+  '@/database/*' or rely on the setup default — NEVER rely on the
+  literal default path; (2) diagnose journal state with
+  `SELECT id FROM drizzle.__drizzle_migrations ORDER BY id` (gaps ⇒
+  rebuild; recovery = set aside db+wal, fresh boot reseeds labels,
+  rpc-configs re-add); (3) file mtime on data/blockchain.db during a
+  vitest run is the cheap tell for an unmocked real-DB import.

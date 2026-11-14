@@ -183,7 +183,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       const ts = blockResult[0]?.timestamp;
       return ts != null ? new Date(Number(ts) * 1000).toISOString() : null;
     } catch (error) {
-      console.warn(`Failed to get block timestamp for ${blockNumber}:`, error);
+      logger.warn({ err: error, blockNumber }, 'Failed to get block timestamp');
       return null;
     }
   };
@@ -360,7 +360,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         );
       }
     } catch (error) {
-      console.error(`Failed to index transactions for block ${blockNumber}:`, error);
+      logger.error({ err: error, blockNumber }, 'Failed to index transactions for block');
     }
   };
 
@@ -476,7 +476,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           total,
         };
       } catch (error) {
-        console.error(`Failed to get transactions for block ${blockNumber}:`, error);
+        logger.error({ err: error, blockNumber }, 'Failed to get transactions for block');
         // A failed read is not an empty block (same rule as the sibling
         // list endpoints and /api/stats/overview): the caller's 500/retry
         // must be reachable.
@@ -523,7 +523,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           total,
         };
       } catch (error) {
-        console.error(`Failed to get transactions for address ${address}:`, error);
+        logger.error({ err: error, address }, 'Failed to get transactions for address');
         throw error;
       }
     },
@@ -558,7 +558,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           total: sqlCountTotal(countResult),
         };
       } catch (error) {
-        console.error('Failed to get latest transactions:', error);
+        logger.error({ err: error }, 'Failed to get latest transactions');
         // routes/transactions.ts answers 500 'Failed to get transactions';
         // swallowing here made an outage look like an empty chain.
         throw error;
@@ -627,7 +627,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           successRate,
         };
       } catch (error) {
-        console.error('Failed to get transaction stats:', error);
+        logger.error({ err: error }, 'Failed to get transaction stats');
         throw new Error('Failed to get transaction statistics', { cause: error });
       }
     },

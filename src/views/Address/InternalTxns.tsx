@@ -29,7 +29,6 @@ import {
 import { addressSearchSchema, effectiveInternalTxDepth } from '@/views/Address/search';
 import { fetchInternalTransactions, type InternalTxnsResult } from '@/services/addressScan';
 import { CallTypeBadge } from '@/components/CallTypeBadge';
-import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, linkStyle, monoStyle } from '@/components/ui/DataTable';
@@ -40,9 +39,10 @@ import {
   depthCell,
   FailedTracesCollapsible,
   muted,
-  retryRow,
+  RetryRow,
   summaryLine,
   traceOneTxOutcome,
+  TRUNCATED_LIST_NOTE,
 } from '@/components/internalTxnsShared';
 
 // Trace-depth presets offered by the compact control: the scan default,
@@ -425,11 +425,7 @@ export default function InternalTxns({
                 Internal transaction tracing is not supported by this RPC — the endpoint does not
                 implement <code>debug_traceTransaction</code>. Nothing was traced.
               </Alert>
-              <div className={retryRow}>
-                <Button variant="secondary" size="sm" onClick={retry}>
-                  Retry
-                </Button>
-              </div>
+              <RetryRow onRetry={retry} />
             </div>
           ) : (
             <>
@@ -437,9 +433,7 @@ export default function InternalTxns({
                 {internalTxSummary(aggregate)} · {tracedScopeLabel(tracedTxs.length, txPage)}
               </p>
               {aggregate.truncated && (
-                <p className={summaryLine}>
-                  Row or depth limits were hit — this list is truncated, not exhaustive.
-                </p>
+                <p className={summaryLine}>{TRUNCATED_LIST_NOTE}</p>
               )}
               {aggregate.rows.length === 0 ? (
                 <Alert variant="info">

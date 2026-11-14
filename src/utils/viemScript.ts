@@ -19,7 +19,12 @@
 // form uses (paramParsing.parseFunctionArgs), so the script is buildable
 // exactly when the form's submit would encode successfully.
 
-import { parseFunctionArgs, type ParamComponent } from './paramParsing';
+import {
+  ARRAY_SUFFIX_PATTERN,
+  INT_TYPE_PATTERN,
+  parseFormArgsForBuild,
+  type ParamComponent,
+} from './paramParsing';
 import { type CastableFunction, toAbiFunction } from './castCommand';
 import { VIEM_CHAIN_EXPORTS } from '@/utils/viemChainExports';
 
@@ -43,11 +48,6 @@ export type ViemScript =
     ok: false;
     reason: string;
   };
-
-const INT_TYPE_PATTERN = /^(u?)int(\d+)?$/;
-// Rightmost array suffix — the same shape paramParsing peels, so any
-// array (fixed, dynamic, nested) is literalized element-wise.
-const ARRAY_SUFFIX_PATTERN = /^(.*)\[(\d*)]$/;
 
 // Build the viem snippet for one function's current form state. `rawArgs`
 // are the form's raw input strings; a null/undefined entry is a missing
@@ -77,28 +77,15 @@ export function buildViemScript({
   /** Raw ABI error entries embedded verbatim so reverts decode. */
   errors?: readonly unknown[];
 }): ViemScript {
-  // An explicit null/undefined argument cannot be literalized; refuse it
-  // instead of silently treating it as a missing trailing empty.
-  if (rawArgs.some(arg => arg == null)) {
-    return { ok: false, reason: 'missing argument value' };
-  }
-  const args = rawArgs as readonly string[];
-
-  const parsed = parseFunctionArgs(func.inputs, args, overloadInputCounts);
-  if (!parsed.isValid) {
-    return {
-      ok: false,
-      reason: parsed.fieldErrors.find(err => err !== '') ?? 'invalid arguments',
-    };
-  }
-
-  // The form's trailing-empty rule: the trailing run of empty inputs is
-  // omitted from the encoded call (only when a same-name overload
-  // accepts the filled count — otherwise the parse above refused). The
-  // snippet mirrors the omission on both fronts: the embedded abi entry
-  // AND the args list use the shortened inputs, so viem encodes exactly
-  // what the form's submit path sends.
-  const effectiveInputs = func.inputs.slice(0, parsed.values.length);
+  // Shared preamble (parseFormArgsForBuild): null-argument refusal, the
+  // form's own parseFunctionArgs validation, and the effective-inputs
+  // slice of the trailing-empty omission rule. The snippet mirrors the
+  // omission on both fronts — the embedded abi entry AND the args list
+  // use the shortened inputs, so viem encodes exactly what the form's
+  // submit path sends.
+  const parsed = parseFormArgsForBuild(func, rawArgs, overloadInputCounts);
+  if (!parsed.ok) return { ok: false, reason: parsed.reason };
+  const { values, effectiveInputs } = parsed;
 
   const isRead = func.stateMutability === 'view' || func.stateMutability === 'pure';
   const exportName = VIEM_CHAIN_EXPORTS.get(chain.id);
@@ -190,11 +177,11 @@ export function buildViemScript({
   lines.push(`  address: ${tsString(contractAddress)},`);
   lines.push('  abi,');
   lines.push(`  functionName: ${tsString(func.name)},`);
-  if (parsed.values.length > 0) {
+  if (values.length > 0) {
     lines.push('  args: [');
     lines.push(
       effectiveInputs
-        .map((input, index) => `    ${literalizeArg(input, parsed.values[index])}`)
+        .map((input, index) => `    ${literalizeArg(input, values[index])}`)
         .join(',\n'),
     );
     lines.push('  ],');

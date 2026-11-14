@@ -1,4 +1,4 @@
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 
 // Styles shared by the view shell and the tab panels; panel-specific styles
 // stay colocated with their components.
@@ -49,34 +49,44 @@ export const errorStyles = css`
   margin-bottom: 20px;
 `;
 
-// Soft notice boxes: role-tinted background with the role color as text
-// (the haze-ui Alert recipe). No margin here — call sites own placement.
-export const noticeBoxOk = css`
+// Soft badge color recipes (the haze-ui Badge palette). Shape, padding and
+// typography stay with each badge so pills and squares compose freely
+// without property conflicts.
+export const badgeOk = css`
   background: var(--haze-color-success-subtle);
   border: 1px solid color-mix(in srgb, var(--haze-color-success) 25%, transparent);
   color: var(--haze-color-success);
-  padding: 10px 14px;
-  border-radius: 6px;
-  word-break: break-word;
 `;
 
-export const noticeBoxWarn = css`
+export const badgeWarn = css`
   background: var(--haze-color-warning-subtle);
   border: 1px solid color-mix(in srgb, var(--haze-color-warning) 25%, transparent);
   color: var(--haze-color-warning);
+`;
+
+export const badgeError = css`
+  background: var(--haze-color-danger-subtle);
+  border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
+  color: var(--haze-color-danger);
+`;
+
+// Box tail composed onto the badge color recipes for the notice boxes:
+// each notice box is exactly its badge's three color declarations plus
+// this padding/radius/word-wrap shape (the haze-ui Alert recipe), so the
+// families compose instead of restating each other.
+export const noticeShape = css`
   padding: 10px 14px;
   border-radius: 6px;
   word-break: break-word;
 `;
 
-export const noticeBoxError = css`
-  background: var(--haze-color-danger-subtle);
-  border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
-  color: var(--haze-color-danger);
-  padding: 10px 14px;
-  border-radius: 6px;
-  word-break: break-word;
-`;
+// Soft notice boxes: role-tinted background with the role color as text
+// (the haze-ui Alert recipe). No margin here — call sites own placement.
+export const noticeBoxOk = cx(badgeOk, noticeShape);
+
+export const noticeBoxWarn = cx(badgeWarn, noticeShape);
+
+export const noticeBoxError = cx(badgeError, noticeShape);
 
 // Solid action buttons (the haze-ui solid recipe: role fill + inverse
 // text, one step down the ladder on hover). Panels keep their own
@@ -144,35 +154,5 @@ export const secondaryActionButton = css`
     border-color: var(--haze-color-border);
     color: var(--haze-color-text-muted);
     cursor: not-allowed;
-  }
-`;
-
-// Soft badge color recipes (the haze-ui Badge palette). Shape, padding and
-// typography stay with each badge so pills and squares compose freely
-// without property conflicts.
-export const badgeOk = css`
-  background: var(--haze-color-success-subtle);
-  border: 1px solid color-mix(in srgb, var(--haze-color-success) 25%, transparent);
-  color: var(--haze-color-success);
-`;
-
-export const badgeWarn = css`
-  background: var(--haze-color-warning-subtle);
-  border: 1px solid color-mix(in srgb, var(--haze-color-warning) 25%, transparent);
-  color: var(--haze-color-warning);
-`;
-
-export const badgeError = css`
-  background: var(--haze-color-danger-subtle);
-  border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
-  color: var(--haze-color-danger);
-`;
-
-export const linkStyle = css`
-  color: var(--haze-color-primary);
-  text-decoration: none;
-
-  &:hover {
-    text-decoration: underline;
   }
 `;

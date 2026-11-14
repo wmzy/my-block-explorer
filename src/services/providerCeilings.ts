@@ -20,7 +20,7 @@
  * ladder semantics.
  */
 
-import { db } from '../database/drizzle';
+import { db } from '../database/init';
 import { providerLimits } from '../database/schema';
 // Relative path on purpose: same rule as the other services — the
 // vite.config esbuild bundle of the api-app graph must not need the '@/'

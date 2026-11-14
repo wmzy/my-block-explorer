@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/Button';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { linkStyle } from '@/components/ui/DataTable';
+import { NO_ON_CHAIN_CODE_CAVEAT } from '@/components/ui/wrongRouteCopy';
 import { SourceCodeViewer } from '@/components/SourceCodeViewer';
 import { post, isBackendUnreachable } from '@/util/http';
 import { formatBigInt, formatDateTime } from '@/utils/format';
@@ -545,10 +546,7 @@ function NotAContractState({ chainId, address }: { chainId: number; address: str
           </TypedLink>
         </InfoItem>
       </InfoGrid>
-      <p>
-        This address holds no on-chain code — it is an externally owned account (EOA), or no
-        contract is deployed at it on this chain.
-      </p>
+      <p>{NO_ON_CHAIN_CODE_CAVEAT}</p>
     </div>
   );
 }

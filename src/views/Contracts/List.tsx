@@ -12,10 +12,16 @@ import { Input } from 'haze-ui';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
+import {
+  filterBox,
+  listToolbar,
+  sourceNote,
+  toolbarActions,
+} from '@/components/ui/listToolbar';
+import { RefreshButton } from '@/components/ui/RefreshButton';
 import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
@@ -25,48 +31,6 @@ import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { CONTRACT_DIRECTORY_PAGE_SIZE, useContractDirectory } from '@/services/contractDirectory';
 import { formatNumber, formatRelativeTime } from '@/utils/format';
 import { errorMessage } from '@/utils/errorHandler';
-
-// Header row: title on the left, the filter input and Refresh on the
-// right (Transactions/List toolbar family).
-const listToolbar = css`
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--haze-space-4);
-  margin-bottom: var(--haze-space-4);
-  flex-wrap: wrap;
-`;
-
-const toolbarActions = css`
-  display: flex;
-  align-items: center;
-  gap: var(--haze-space-2);
-
-  @media (max-width: 768px) {
-    flex-wrap: wrap;
-  }
-`;
-
-// The filter input keeps its own width; the Refresh button follows it.
-// On narrow screens the input owns a full-width row and Refresh wraps
-// below it — a full-width input is a better tap target than a ~240px
-// squeeze next to the button.
-const filterBox = css`
-  width: 280px;
-  max-width: 100%;
-
-  @media (max-width: 768px) {
-    width: 100%;
-  }
-`;
-
-// Honesty line under the toolbar: this lists the explorer's own cache,
-// not an on-chain registry — the empty state and this note both say so.
-const sourceNote = css`
-  font-size: var(--haze-text-sm);
-  color: var(--haze-color-text-secondary);
-  margin-bottom: var(--haze-space-3);
-`;
 
 const verificationCell = css`
   display: inline-flex;
@@ -172,12 +136,12 @@ export default function ContractsList() {
                 onChange={e => qFilter.setValue(e.target.value)}
               />
             </div>
-            <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={fetching}>
-              {fetching ? 'Refreshing…' : '↻ Refresh'}
-            </Button>
+            <RefreshButton onClick={() => void refetch()} fetching={fetching} />
           </div>
         </div>
 
+        {/* Honesty line under the toolbar: this lists the explorer's own
+            cache, not an on-chain registry — the empty state says so too. */}
         <div className={sourceNote}>
           Cached contract sources on this explorer — open a contract page to cache more.
         </div>

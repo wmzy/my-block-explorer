@@ -62,10 +62,14 @@ type ParseResult = { value?: unknown; error?: string };
 export const ADDRESS_PATTERN = HEX_ADDRESS_RE;
 const BOOL_PATTERN = /^(true|false)$/i;
 const HEX_PATTERN = /^0x[0-9a-fA-F]*$/;
-const INT_PATTERN = /^(u?)int(\d+)?$/;
+// Exported for the copy-out builders (castCommand, viemScript), whose
+// arg formatters and literalizers classify types by the same shapes this
+// parser peels — one definition instead of three byte-identical copies.
+export const INT_TYPE_PATTERN = /^(u?)int(\d+)?$/;
 // Rightmost array suffix: 'address[]', 'uint256[3]', 'tuple[2]', and the
-// outer suffix of nested shapes like 'uint256[2][]'.
-const ARRAY_SUFFIX_PATTERN = /^(.*)\[(\d*)\]$/;
+// outer suffix of nested shapes like 'uint256[2][]'. Also exported for
+// the builders (fixed/dynamic/nested array detection and element peeling).
+export const ARRAY_SUFFIX_PATTERN = /^(.*)\[(\d*)\]$/;
 
 // Human-facing field label: the ABI parameter name when present, else the
 // position, so error messages always identify the input.
@@ -139,6 +143,53 @@ export function parseFunctionArgs(
     values: values.slice(0, lastFilled + 1),
     fieldErrors,
     isValid: fieldErrors.every(err => err === ''),
+  };
+}
+
+// Shared preamble of the two copy-out builders (castCommand, viemScript):
+// the null-argument refusal, the SAME parseFunctionArgs validation the
+// form's submit path runs, and the effective-inputs slice the trailing-
+// empty omission rule yields. A builder is buildable exactly when the
+// form's submit would encode successfully, and everything it emits
+// (argument list, signature, abi entry) is built over the effective
+// inputs so its output agrees with what submit sends.
+export type ParsedFormArgs =
+  | { ok: false; reason: string }
+  | { ok: true; values: unknown[]; effectiveInputs: readonly ParamDescriptor[] };
+
+// `func` is the builders' CastableFunction viewed structurally: only its
+// ABI inputs are needed here, so the parser stays unaware of that type
+// (castCommand imports this module, never the reverse).
+export function parseFormArgsForBuild(
+  func: { inputs: readonly ParamDescriptor[] },
+  rawArgs: readonly (string | null | undefined)[],
+  overloadInputCounts?: readonly number[],
+): ParsedFormArgs {
+  // An explicit null/undefined argument cannot be formatted or
+  // literalized; refuse it instead of silently treating it as a missing
+  // trailing empty.
+  if (rawArgs.some(arg => arg == null)) {
+    return { ok: false, reason: 'missing argument value' };
+  }
+  const args = rawArgs as readonly string[];
+
+  const parsed = parseFunctionArgs(func.inputs, args, overloadInputCounts);
+  if (!parsed.isValid) {
+    return {
+      ok: false,
+      reason: parsed.fieldErrors.find(err => err !== '') ?? 'invalid arguments',
+    };
+  }
+
+  // The form's trailing-empty rule: the trailing run of empty inputs is
+  // omitted from the encoded call, but only when a same-name overload
+  // accepts exactly the filled count (viem resolves by argument count) —
+  // otherwise the parse above already refused, so a builder can never
+  // emit a shortened signature the abi does not carry.
+  return {
+    ok: true,
+    values: parsed.values,
+    effectiveInputs: func.inputs.slice(0, parsed.values.length),
   };
 }
 
@@ -255,7 +306,7 @@ function parseScalar(type: string, raw: string): ParseResult {
     return { value: raw };
   }
 
-  const intMatch = INT_PATTERN.exec(type);
+  const intMatch = INT_TYPE_PATTERN.exec(type);
   if (intMatch) {
     const signed = intMatch[1] !== 'u';
     const bits = intMatch[2] === undefined ? 256 : Number(intMatch[2]);

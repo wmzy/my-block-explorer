@@ -23,6 +23,7 @@ import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { linkStyle, monoStyle } from '@/components/ui/DataTable';
+import { NO_ON_CHAIN_CODE_CAVEAT } from '@/components/ui/wrongRouteCopy';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Badge } from '@/components/ui/Badge';
@@ -417,7 +418,7 @@ export function NotATokenContractState({
 }) {
   const explanation =
     reason === 'no-code'
-      ? 'This address holds no on-chain code — it is an externally owned account (EOA), or no contract is deployed at it on this chain.'
+      ? NO_ON_CHAIN_CODE_CAVEAT
       : reason === 'delegated-eoa'
         ? 'This address is an EIP-7702 delegated account — it borrows code from another contract but is not a token contract itself.'
         : 'A contract is deployed here, but none of the standard token probes (name, symbol, decimals, totalSupply) responded — it is not an ERC-20-style token.';

@@ -176,12 +176,6 @@ export function getChainSymbol(chainId: number): string {
   return chain?.nativeCurrency.symbol ?? 'ETH';
 }
 
-// Get the chain's block explorer URL
-export function getChainExplorerUrl(chainId: number): string {
-  const chain = getChainInfo(chainId);
-  return chain?.blockExplorers?.default?.url ?? '';
-}
-
 // Get the default RPC URL
 export function getDefaultRpcUrl(chainId: number): string {
   const chain = getChainInfo(chainId);
@@ -204,10 +198,8 @@ export function isChainSupported(chainId: number): boolean {
 export type UserRpcConfig = {
   chainId: number;
   customRpcUrl?: string; // User-defined RPC
-  rpcBackups?: string[]; // Backup RPC endpoints
   timeout?: number; // Timeout setting
   retryCount?: number; // Retry count
-  rateLimit?: number; // Request limit
 };
 
 // Get the effective RPC URL (custom first, otherwise the viem default)

@@ -3,6 +3,21 @@ import { cleanup } from '@testing-library/react';
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { setApiBase } from '@/util/apiBase';
 import React from 'react';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// Test isolation for the DuckDB default path: any suite that (transitively)
+// imports the database graph WITHOUT mocking '@/database/drizzle' or
+// '@/database/init' used to instantiate the real adapter on
+// data/blockchain.db — the dev database. With --maxWorkers>1, two such
+// suites in different workers are concurrent writers, and concurrent
+// migration/journal writes trash drizzle.__drizzle_migrations (non-
+// contiguous ids; every later read fails cause-less). Setup files run
+// before test-file imports, so defaulting DATABASE_URL here (only when
+// unset — explicit stubs and CI-provided values win) redirects those
+// suites to a per-worker temp file. Suites that mock the adapter are
+// unaffected; per-file isolation is unchanged.
+process.env.DATABASE_URL ??= `duckdb://${join(tmpdir(), `be-vitest-${process.pid}.db`)}`;
 
 expect.extend(matchers);
 

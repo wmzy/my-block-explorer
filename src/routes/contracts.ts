@@ -92,6 +92,97 @@ const parseBodyValue = (raw: unknown): { ok: true; value?: bigint } | { ok: fals
   return { ok: false };
 };
 
+// Proxy-aware ABI resolution shared by the functions/read/simulate/
+// estimate-gas endpoints (resolveIndexingAbi in routes/events.ts is the
+// indexing-side precedent): fetch the cached source, and when it is a
+// proxy with a resolved implementation, the implementation's ABI string
+// wins. Undefined when neither side has one — the functions endpoint
+// passes that through (the service answers empty function lists), the
+// three interaction endpoints below reject it with the shared 400.
+const resolveTargetAbi = async (
+  chainId: number,
+  address: ReturnType<typeof getValidatedAddress>,
+): Promise<string | undefined> => {
+  const contractSource = await contractSourceService.getContractSource(chainId, address);
+  if (contractSource?.isProxy && contractSource.implementationContract) {
+    return contractSource.implementationContract.abi;
+  }
+  return contractSource?.abi;
+};
+
+// The interaction endpoints' shared request-body shape. `value` and
+// `stateOverride` are read (and 400'd) by simulate/estimate-gas only —
+// /read ignores them entirely.
+type InteractionRequestBody = {
+  functionName?: unknown;
+  args?: unknown[];
+  value?: unknown;
+  from?: string;
+  stateOverride?: unknown;
+};
+
+// The interaction endpoints' shared body contract, in the historical
+// check order (functionName → args → value → stateOverride) so each
+// route's wire behavior stays byte-identical to the inline blocks this
+// replaces: every failure answers its specific 400 instead of escaping
+// the generic catch as an opaque 500.
+type ValidatedInteractionBody =
+  | {
+    ok: true;
+    functionName: string;
+    args: unknown[];
+    value?: bigint;
+    stateOverride?: StateOverride;
+  }
+  | { ok: false; error: ReturnType<typeof createApiError>; status: 400 };
+
+const validateInteractionBody = (
+  body: InteractionRequestBody,
+  withValueAndStateOverride: boolean,
+): ValidatedInteractionBody => {
+  const { functionName, args = [], value, stateOverride: stateOverrideRaw } = body;
+
+  if (!functionName || typeof functionName !== 'string') {
+    return {
+      ok: false,
+      error: createApiError(400, 'invalid_function_name', 'Function name is required'),
+      status: 400,
+    };
+  }
+
+  if (!Array.isArray(args)) {
+    return {
+      ok: false,
+      error: createApiError(400, 'invalid_args', 'Arguments must be an array'),
+      status: 400,
+    };
+  }
+
+  if (!withValueAndStateOverride) {
+    return { ok: true, functionName, args };
+  }
+
+  const parsedValue = parseBodyValue(value);
+  if (!parsedValue.ok) {
+    return {
+      ok: false,
+      error: createApiError(
+        400,
+        'invalid_value',
+        'value must be a 0x-hex or decimal integer quantity',
+      ),
+      status: 400,
+    };
+  }
+
+  const override = parseBodyStateOverride(stateOverrideRaw);
+  if ('error' in override) {
+    return { ok: false, error: override.error, status: override.status };
+  }
+
+  return { ok: true, functionName, args, value: parsedValue.value, stateOverride: override.value };
+};
+
 // Every contract_sources row this explorer has cached for the chain —
 // populated by opening (or force-refreshing) a contract page, never by
 // this endpoint. Read-only and open; X-Data-Source says 'database'
@@ -289,13 +380,7 @@ app.get('/chains/:chainId/contracts/:address/functions', async c => {
   const address = getValidatedAddress(c.req.param('address'));
 
   try {
-    const contractSource = await contractSourceService.getContractSource(chainId, address);
-
-    let targetABI = contractSource?.abi;
-
-    if (contractSource?.isProxy && contractSource?.implementationContract) {
-      targetABI = contractSource.implementationContract.abi;
-    }
+    const targetABI = await resolveTargetAbi(chainId, address);
 
     const { readFunctions, writeFunctions } = await contractInteractionService.getContractFunctions(
       chainId,
@@ -336,27 +421,14 @@ app.post('/chains/:chainId/contracts/:address/read', contractReadRateLimiter, as
 
   // A malformed JSON body must not reach the generic catch below, where it
   // would surface as an opaque 500 'Failed to read contract'.
-  const body = await readJsonBody<{ functionName?: unknown; args?: unknown[] }>(c);
+  const body = await readJsonBody<InteractionRequestBody>(c);
 
   try {
-    const { functionName, args = [] } = body;
+    const parsed = validateInteractionBody(body, false);
+    if (!parsed.ok) return c.json(parsed.error, parsed.status);
+    const { functionName, args } = parsed;
 
-    if (!functionName || typeof functionName !== 'string') {
-      return respondError(c, 400, 'invalid_function_name', 'Function name is required');
-    }
-
-    if (!Array.isArray(args)) {
-      return respondError(c, 400, 'invalid_args', 'Arguments must be an array');
-    }
-
-    const contractSource = await contractSourceService.getContractSource(chainId, address);
-
-    let targetABI = contractSource?.abi;
-
-    if (contractSource?.isProxy && contractSource?.implementationContract) {
-      targetABI = contractSource.implementationContract.abi;
-    }
-
+    const targetABI = await resolveTargetAbi(chainId, address);
     if (!targetABI) {
       return respondError(c, 400, 'abi_unavailable', 'Contract ABI not available');
     }
@@ -401,48 +473,14 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
 
   // A malformed JSON body must not reach the generic catch below, where it
   // would surface as an opaque 500 'Failed to simulate contract'.
-  const body = await readJsonBody<{
-    functionName?: unknown;
-    args?: unknown[];
-    value?: unknown;
-    from?: string;
-    stateOverride?: unknown;
-  }>(c);
+  const body = await readJsonBody<InteractionRequestBody>(c);
 
   try {
-    const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
+    const parsed = validateInteractionBody(body, true);
+    if (!parsed.ok) return c.json(parsed.error, parsed.status);
+    const { functionName, args } = parsed;
 
-    if (!functionName || typeof functionName !== 'string') {
-      return respondError(c, 400, 'invalid_function_name', 'Function name is required');
-    }
-
-    if (!Array.isArray(args)) {
-      return respondError(c, 400, 'invalid_args', 'Arguments must be an array');
-    }
-
-    const parsedValue = parseBodyValue(value);
-    if (!parsedValue.ok) {
-      return respondError(
-        c,
-        400,
-        'invalid_value',
-        'value must be a 0x-hex or decimal integer quantity',
-      );
-    }
-
-    const override = parseBodyStateOverride(stateOverrideRaw);
-    if ('error' in override) {
-      return c.json(override.error, override.status);
-    }
-
-    const contractSource = await contractSourceService.getContractSource(chainId, address);
-
-    let targetABI = contractSource?.abi;
-
-    if (contractSource?.isProxy && contractSource?.implementationContract) {
-      targetABI = contractSource.implementationContract.abi;
-    }
-
+    const targetABI = await resolveTargetAbi(chainId, address);
     if (!targetABI) {
       return respondError(c, 400, 'abi_unavailable', 'Contract ABI not available');
     }
@@ -452,10 +490,10 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
       contractAddress: address,
       functionName,
       args,
-      value: parsedValue.value,
-      from,
+      value: parsed.value,
+      from: body.from,
       abi: targetABI,
-      stateOverride: override.value,
+      stateOverride: parsed.stateOverride,
     });
 
     c.header('X-Chain-Name', getChainName(chainId));
@@ -466,8 +504,10 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
       contractAddress: address,
       functionName,
       args,
-      value,
-      from,
+      // The raw body value echoes back (not the parsed bigint), exactly
+      // like the inline code this replaced.
+      value: body.value,
+      from: body.from,
       result: result.result,
       success: result.success,
       error: result.error,
@@ -500,48 +540,14 @@ app.post(
 
     // Same contract as simulate: a malformed JSON body is a 400 invalid_json,
     // not an opaque 500 'Failed to estimate gas'.
-    const body = await readJsonBody<{
-      functionName?: unknown;
-      args?: unknown[];
-      value?: unknown;
-      from?: string;
-      stateOverride?: unknown;
-    }>(c);
+    const body = await readJsonBody<InteractionRequestBody>(c);
 
     try {
-      const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
+      const parsed = validateInteractionBody(body, true);
+      if (!parsed.ok) return c.json(parsed.error, parsed.status);
+      const { functionName, args } = parsed;
 
-      if (!functionName || typeof functionName !== 'string') {
-        return respondError(c, 400, 'invalid_function_name', 'Function name is required');
-      }
-
-      if (!Array.isArray(args)) {
-        return respondError(c, 400, 'invalid_args', 'Arguments must be an array');
-      }
-
-      const parsedValue = parseBodyValue(value);
-      if (!parsedValue.ok) {
-        return respondError(
-          c,
-          400,
-          'invalid_value',
-          'value must be a 0x-hex or decimal integer quantity',
-        );
-      }
-
-      const override = parseBodyStateOverride(stateOverrideRaw);
-      if ('error' in override) {
-        return c.json(override.error, override.status);
-      }
-
-      const contractSource = await contractSourceService.getContractSource(chainId, address);
-
-      let targetABI = contractSource?.abi;
-
-      if (contractSource?.isProxy && contractSource?.implementationContract) {
-        targetABI = contractSource.implementationContract.abi;
-      }
-
+      const targetABI = await resolveTargetAbi(chainId, address);
       if (!targetABI) {
         return respondError(c, 400, 'abi_unavailable', 'Contract ABI not available');
       }
@@ -551,10 +557,10 @@ app.post(
         contractAddress: address,
         functionName,
         args,
-        value: parsedValue.value,
-        from,
+        value: parsed.value,
+        from: body.from,
         abi: targetABI,
-        stateOverride: override.value,
+        stateOverride: parsed.stateOverride,
       });
 
       c.header('X-Chain-Name', getChainName(chainId));
@@ -569,8 +575,10 @@ app.post(
         contractAddress: address,
         functionName,
         args,
-        value,
-        from,
+        // The raw body value echoes back (not the parsed bigint), exactly
+        // like the inline code this replaced.
+        value: body.value,
+        from: body.from,
         gasLimit: gasEstimate.gasLimit.toString(),
         gasPrice: gasEstimate.gasPrice?.toString(),
         maxFeePerGas: gasEstimate.maxFeePerGas?.toString(),

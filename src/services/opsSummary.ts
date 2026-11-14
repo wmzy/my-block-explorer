@@ -102,11 +102,12 @@ export function useOpsSummary(): OpsSummaryQuery {
 // deletes those paths and exits the process. Deliberately NOT part of the
 // polled summary: both calls are explicit operator gestures.
 
-// Twin of UNINSTALL_CONFIRM_PHRASE in src/routes/ops.ts (via services/
-// selfDestruct.ts) — the server file is node-only, so the constant is
-// duplicated here with the twin named on both sides. The API demands it
-// verbatim in the body; the UI makes the operator type it.
-export const UNINSTALL_CONFIRM_PHRASE = 'uninstall';
+// The exact body string POST /api/ops/uninstall demands. Lives in the
+// import-free leaf config/uninstallConfirm.ts and is re-exported here
+// for views/Ops.tsx: this module is browser-imported, so it must NOT
+// import services/selfDestruct.ts (server graph) directly — the leaf is
+// the one home both sides share.
+export { UNINSTALL_CONFIRM_PHRASE } from '../config/uninstallConfirm';
 
 export type UninstallPreviewTarget = {
   kind: string;
