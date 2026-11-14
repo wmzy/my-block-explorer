@@ -20,6 +20,7 @@
 
 import type { CallTraceNode } from '@/utils/traceFormat';
 import { formatNumber } from '@/utils/format';
+import { runBoundedPool } from '@/utils/boundedPool';
 
 /** One flattened internal call. `depth` counts from the tx's top-level frame (0), so the first internal level is 1. */
 export type InternalTxRow = {
@@ -286,7 +287,9 @@ export const shortTraceFailureMessage = (message: string): string =>
  * Bounded-concurrency pool over a hash list, worker injected: outcomes
  * land at their input index, so the aggregate order is the input order,
  * not completion order — the deterministic half of both tracing UIs.
- * `onSettled` fires once per settled item (progress disclosure).
+ * `onSettled` fires once per settled item (progress disclosure). The
+ * scheduling itself is utils/boundedPool's runBoundedPool; this wrapper
+ * only keeps the tracing family's call shape.
  */
 export async function runTracePool<T>(
   hashes: readonly string[],
@@ -294,19 +297,5 @@ export async function runTracePool<T>(
   traceOne: (hash: string) => Promise<T>,
   onSettled: (settled: number) => void,
 ): Promise<T[]> {
-  const outcomes: T[] = new Array(hashes.length);
-  let next = 0;
-  let settled = 0;
-  const workers = Array.from({ length: Math.min(concurrency, hashes.length) }, async () => {
-    for (;;) {
-      const index = next;
-      next += 1;
-      if (index >= hashes.length) return;
-      outcomes[index] = await traceOne(hashes[index]);
-      settled += 1;
-      onSettled(settled);
-    }
-  });
-  await Promise.all(workers);
-  return outcomes;
+  return runBoundedPool(hashes, concurrency, traceOne, { onSettled });
 }

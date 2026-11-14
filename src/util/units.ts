@@ -11,7 +11,7 @@
 
 import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 import { VALUE_UNIT_STORAGE_KEY } from '@/util/storageKeys';
-import { formatFixedDecimals } from '@/utils/format';
+import { formatValueAmount } from '@/utils/format';
 
 // Canonical literal lives in the manifest (util/storageKeys.ts);
 // re-exported so existing consumers keep this import point.
@@ -82,9 +82,9 @@ export type FormattedValue = {
 /**
  * Format a wei amount under a unit preference.
  *
- * - native: the shared display contract of formatValue in utils/format
- *   (zero exact, dust floor at the 4th decimal, 4-decimal figures),
- *   generalized to the chain's own decimals — byte-identical to the
+ * - native: formatValueAmount in utils/format — the same numeric core
+ *   formatValue renders the tx surfaces with (zero exact, dust floor at
+ *   the 4th decimal, 4-decimal figures), byte-identical to the
  *   pre-toggle Value row on 18-decimal chains.
  * - gwei/wei: the exact integer in that unit, en-US grouped. Gwei
  *   truncates sub-gwei wei (integer readout); the exact wei stays
@@ -98,20 +98,11 @@ export function formatValueByUnit(
 ): FormattedValue {
   if (unit === 'native') {
     const { symbol, decimals } = chain;
-    if (valueWei === 0n) return { text: `0 ${symbol}`, unitLabel: symbol };
-    // 1/10000 of the native unit in integer wei — the display floor,
-    // compared exactly (10^14 wei on an 18-decimal chain).
-    const dustFloor = 10n ** BigInt(Math.max(decimals - 4, 0));
-    if (valueWei < dustFloor) return { text: `<0.0001 ${symbol}`, unitLabel: symbol };
-    // Exact integer rendering (utils/format.formatFixedDecimals): the old
-    // `parseFloat(formatUnits(...)).toFixed(4)` round-tripped through a
-    // double, so distinct amounts past 2^53 units collapsed onto one
-    // figure and huge ones printed as "1e+21".
-    const shown = formatFixedDecimals(valueWei, decimals, 4);
-    return {
-      text: shown === null ? `${valueWei} ${symbol}` : `${shown} ${symbol}`,
-      unitLabel: symbol,
-    };
+    // The shared numeric display contract (utils/format.formatValueAmount
+    // — the same core formatValue renders the tx surfaces with): exact
+    // zero, "<0.0001" dust floor, 4 exact decimals over the chain's OWN
+    // decimals, raw wei fallback on an invalid decimals.
+    return { text: `${formatValueAmount(valueWei, decimals)} ${symbol}`, unitLabel: symbol };
   }
   const wholeUnits = unit === 'wei' ? valueWei : valueWei / GWEI_IN_WEI;
   return { text: `${groupedInteger.format(wholeUnits)} ${unit}`, unitLabel: unit };

@@ -7,14 +7,28 @@ import { ApiError } from '@/util/apiError';
 // Backend error bodies are {message, code?, details?} with some routes
 // using {error} instead (e.g. quick-range 400s). Anything else (e.g. an
 // HTML error page) degrades to undefined by fetch-fun's JSON reader, so
-// extract fields defensively instead of trusting the shape.
-function toApiError(e: ff.HTTPError): ApiError {
+// extract fields defensively instead of trusting the shape. Exported for
+// services that pipe their own ff.mapError over the base chain (the scan
+// endpoints' error-code fallback): keeps the body-extraction layer single
+// while each mapper keeps its own code semantics.
+export function parseHttpErrorBody(e: ff.HTTPError): {
+  message?: string;
+  errorText?: string;
+  code?: string;
+  details?: unknown;
+} {
   const body: Record<string, unknown> =
     typeof e.data === 'object' && e.data !== null ? (e.data as Record<string, unknown>) : {};
-  const message = typeof body.message === 'string' ? body.message : undefined;
-  const errorText = typeof body.error === 'string' ? body.error : undefined;
-  const code = typeof body.code === 'string' ? body.code : undefined;
-  const details = 'details' in body ? body.details : undefined;
+  return {
+    message: typeof body.message === 'string' ? body.message : undefined,
+    errorText: typeof body.error === 'string' ? body.error : undefined,
+    code: typeof body.code === 'string' ? body.code : undefined,
+    details: 'details' in body ? body.details : undefined,
+  };
+}
+
+function toApiError(e: ff.HTTPError): ApiError {
+  const { message, errorText, code, details } = parseHttpErrorBody(e);
   return new ApiError(message ?? errorText ?? `HTTP ${e.status}`, e.status, code, details);
 }
 

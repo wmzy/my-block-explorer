@@ -21,7 +21,14 @@ vi.mock('@/database/drizzle', async () => {
 
 // RpcManager (imported transitively by EventIndexingService) reads its config
 // through this module; point it at the mocked db so no real file is opened.
-vi.mock('@/database/init', async () => await import('@/database/drizzle'));
+vi.mock('@/database/init', async importOriginal => {
+  // Pass the REAL exports (sqlCountTotal et al.) through: services import
+  // helpers from '@/database/init', and swapping the module wholesale for
+  // the drizzle schema strips them.
+  const actual = await importOriginal<typeof import('@/database/init')>();
+  const mocked = await import('@/database/drizzle');
+  return { ...actual, ...mocked };
+});
 
 import { eq } from 'drizzle-orm';
 import { db } from '@/database/drizzle';

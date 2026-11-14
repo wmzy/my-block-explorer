@@ -237,10 +237,14 @@ pnpm typecheck           # tsc --noEmit
   `deploy-pages.yml`
 - **Test layout** — `tests/` (unit + integration + e2e) is the live suite;
   historical `src/tests/` / `test/` dirs no longer exist
-- **Barrel complete** — `src/utils/index.ts` re-exports all util modules (8 name
-  collisions resolved by explicit re-exports; deep imports stay canonical in
-  call sites; `serialization.ts` pulls pino through the barrel — browser code
-  deep-imports it)
+- **No utils barrel** — `src/utils/index.ts` was deleted in the 2026-11-14
+  dedup wave (zero product importers; only its own test consumed it). Deep
+  imports (`@/utils/<module>`) are the ONLY import style; do NOT recreate a
+  barrel: a star-export can drag the browser-RPC graph (realTimeData,
+  callTraceRpc, contractInteraction, rpcConfigService) into the
+  vite.config esbuild bundle and break the dev server build. Those four
+  modules plus `serialization.ts` (pino) are deep-import-only by
+  convention; `src/utils/AGENTS.md` carries the rule
 - **Proxy port 7890** — Set `HTTP_PROXY`/`HTTPS_PROXY` if network issues
 - **Admin auth is two-tier** (`src/middleware/admin-token.ts`, `x-admin-token`
   header, timing-safe compare). Strict tier (`requireAdminToken`, **fail
@@ -2109,3 +2113,86 @@ pnpm typecheck           # tsc --noEmit
   in-flight-dedup Maps (now 8 with CompileVerify's version-list), scan
   ladders, Address-view micro-extractions, the bespoke copy-button family
   (AbiListPanel/FunctionCallForm/CustomAbiPanel).
+- **2026-11-14 duplication review fix wave round 8 (4 scouts + 6 fix agents +
+  integration)** — 27 findings adjudicated (16 fixed, 6 newly deferred, 5
+  verified deliberate); net −336 lines / 57 files. All verified: tsc 0 errors,
+  eslint 0 errors (113 warnings = pre-existing react-refresh/deps classes),
+  `vitest --changed --maxWorkers=4` green, `pnpm build` green, browser smoke
+  dark-mode on the built bundle. **Canonical migrations** — the count(*)
+  idiom (`sql<number>count(*)` + `Number(rows[0]?.count ?? 0)`) is GONE:
+  14 total-count sites across AddressScanService/ChainCacheService/
+  EventExportService/EventIndexingService/TransactionService now use drizzle
+  `count()` + `sqlCountTotal` (group-by per-row counts stay raw —
+  sqlCountTotal is a single-row unwrap; real-DuckDB integration test proves
+  numeric equivalence); `parseHttpUrl` (utils/validation.ts, discriminated
+  `{ok,url}|{ok,reason:'syntax'|'protocol'}`) is the one URL validator for
+  chains.ts + rpc-config.ts routes; `parseHttpErrorBody` exported from
+  util/http.ts (addressScan.ts's verbatim body-extraction copy deleted, its
+  `code ?? errorText` delta kept explicit); verify.ts's three hand-rolled
+  JSON parses → readJsonBody (malformed raw JSON now answers `invalid_json`
+  instead of falling into `invalid_files` — no pin existed); runBoundedPool
+  gained optional `onSettled` and runTracePool is now a one-line delegate
+  (boundedPool's comment had CLAIMED the absorption since round 7 —
+  canonical comments must match reality); `flattenErrorMessage` in
+  errorHandler (3 identical Error-cause walks migrated) + `errorChainText`
+  exported from traceFormat (txpool copy deleted; chartStats had 2 MORE
+  hidden call sites beyond the scout's count); `traceOneTxOutcome<Row>`
+  shared skeleton in internalTxnsShared (Address/Blocks traceOneTx twins);
+  `shortTokenId` + `formatGweiLabel` + `formatValueAmount` in format.ts
+  (NftHoldings/NftGrid shortId twins, EventTable's shadowing local
+  formatAddress/formatHash, formatValueByUnit's re-implementation of
+  formatValue — corpus-proven byte-equal); formatNumber bigint branch now
+  routes to formatBigInt (was Number() precision loss past 2^53);
+  isRecord ×3 local re-declarations deleted; RpcError type → `RpcErrorInfo`
+  (name no longer collides with errorHandler's class); approval ScanLog
+  fixture builders converged into tests/unit/helpers/approvalLogs.ts. **Real
+  bugs fixed en route** — DeepScan.tsx used NON-EXISTENT haze tokens
+  (`--haze-border`, `--haze-surface` — real names are `--haze-color-border`,
+  `--haze-color-bg-subtle`), so its fallback hex made it the ONLY hardcoded
+  light panel in dark theme; SourceCodeViewer's whole bootstrap-era hex
+  palette tokenized (was unreadable in dark mode); SetupRequiredScreen's copy
+  button had been INVISIBLE since landing (its hover-reveal selector
+  `.codeBlockWrapperStyle:hover &` references a source-level class name that
+  linaria hashes away → opacity 0 forever; the toast was the only visible
+  feedback) — now an always-visible CopyButton. **Dead code deleted** —
+  `src/server/create-server.ts` (zero importers), the ENTIRE utils barrel
+  (`src/utils/index.ts` + barrel.test.ts; product importers were zero —
+  see the rewritten "No utils barrel" note above), tests/mocks/
+  rpcManager.mock.ts (1 consumer; rpc.test.ts inlines it). **Rules pinned**:
+  (1) scout line-numbers drift within minutes on a tree other agents are
+  editing — Main must re-verify P0/P1 evidence before dispatch (this round:
+  both "shadow value identical" claims were wrong; agents picked nearest
+  tokens and reported deltas). (2) gwei rendering has TWO deliberate
+  display contracts: viem `formatGwei` exact expansion (Blocks/Detail) vs
+  gasHistory's display-tuned number formatter (Charts/Home/Pending ≥100→1
+  digit, <1→4 digits) — same name, different semantics; formatGweiLabel
+  serves only the viem family, do NOT "unify" the digit strategies without
+  an explicit visual-delta decision. (3) F1-class migrations break test
+  stubs by ROW SHAPE, not behavior — grant the service owner its stub-test
+  edits up front (5 test files updated this wave, all minimal stub-shape).
+  **Newly deferred (besides the standing list)**: card-recipe family
+  (IndexingRangeManager/EventStatistics/RpcConfig panel css vs
+  views/Contract cardStyles — visual churn, no bug), adapter inline
+  naive-UTC vs dbTime (shape-judging subtlety), utils/api-error.ts vs
+  util/apiError.ts naming (cognitive tax only), TopNavigation vi.mock stub
+  ×45 test files + db-init→drizzle redirect ×5 (vi.mock hoisting limits
+  helper forms; churn:risk poor). **Integration-phase incidents (pinned)**:
+  (1) starting the smoke server WHILE a full `vitest --changed` was in
+  flight re-trashed the dev DuckDB journal (dual writer again — the
+  round-7 rule is kill/finish → THEN open); recovery recipe held (set
+  aside db+wal, labels reseed, rpc-config re-add). (2) `node
+  dist/server/server.js` does NOT start a server — server.ts only exports
+  createServer; the runnable entry is cli.js (`node dist/server/cli.js
+  --no-open`); running server.js applies migrations then exits 0 without
+  listening AND without closing the adapter — an opener that exits via
+  event-loop drain leaves the WAL uncheckpointed, so the NEXT opener sees
+  tables-without-journal-rows and replays 0001 into the tolerated-race
+  path. Sequential openers need a clean close between them, same family
+  as the dual-writer rule. (3) the `@/database/init` → drizzle mock
+  redirect exists in FOUR integration files; migrating any service to
+  import a helper from init breaks all of them at once — the importOriginal
+  pass-through shape (used in count-normalization-duckdb) is now applied
+  to arg-filters-duckdb, range-cas, and addressScanService too, and
+  dbCountString.test.ts (which scripted the OLD `{count}` row shape) is
+  deleted with its wire contract (numeric totals) re-pinned against the
+  real adapter in count-normalization-duckdb.test.ts.

@@ -159,7 +159,9 @@ export function countFailedCalls(node: CallTraceNode): number {
 // Collects an error's whole cause chain plus JSON-RPC codes: viem wraps
 // provider errors several layers deep, and proxies re-encode them, so
 // "method not found" can live in any hop (or only as code -32601).
-const errorChainText = (error: unknown): string => {
+// Exported as the family's one record-shape walk: the txpool tab's
+// unsupported classifier runs the identical probe over txpool_* errors.
+export const errorChainText = (error: unknown): string => {
   const parts: string[] = [];
   let current: unknown = error;
   for (let hop = 0; hop < 8 && typeof current === 'object' && current !== null; hop += 1) {

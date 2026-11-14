@@ -129,9 +129,9 @@ export const estimateScanEta = (
 type ScanAction = 'start' | 'force-start' | 'pause' | 'resume' | 'catchup' | 'delete';
 
 const panelStyle = css`
-  border: 1px solid var(--haze-border, #e5e7eb);
+  border: 1px solid var(--haze-color-border);
   border-radius: 8px;
-  background: var(--haze-surface, #fafafa);
+  background: var(--haze-color-bg-subtle);
   padding: var(--haze-space-4);
   margin-bottom: var(--haze-space-4);
 `;
@@ -156,8 +156,8 @@ const titleStyle = css`
 
 const mutedStyle = css`
   margin: var(--haze-space-2) 0 0;
-  font-size: var(--haze-text-xs, 12px);
-  color: var(--haze-color-text-muted, #6b7280);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
 `;
 
 const startRowStyle = css`
@@ -174,7 +174,7 @@ const startRowStyle = css`
 const fromBlockInputStyle = css`
   input {
     width: 220px;
-    font-family: var(--haze-font-mono, monospace);
+    font-family: var(--haze-font-mono);
   }
 `;
 
@@ -183,9 +183,9 @@ const fromBlockInputStyle = css`
 const tracesToggleStyle = css`
   display: inline-flex;
   align-items: center;
-  gap: var(--haze-space-1, 4px);
-  font-size: var(--haze-text-xs, 12px);
-  color: var(--haze-color-text-muted, #6b7280);
+  gap: var(--haze-space-1);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
   cursor: pointer;
   user-select: none;
 `;
@@ -200,13 +200,13 @@ const actionsRowStyle = css`
 
 const statusLineStyle = css`
   margin: var(--haze-space-2) 0 0;
-  font-size: var(--haze-text-sm, 14px);
+  font-size: var(--haze-text-sm);
 `;
 
 const metaLineStyle = css`
-  margin: var(--haze-space-1, 4px) 0 0;
-  font-size: var(--haze-text-sm, 14px);
-  color: var(--haze-color-text-muted, #6b7280);
+  margin: var(--haze-space-1) 0 0;
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-muted);
 `;
 
 const completeLineStyle = css`
@@ -215,14 +215,14 @@ const completeLineStyle = css`
   border-radius: 6px;
   border: 1px solid var(--haze-color-success);
   background: color-mix(in srgb, var(--haze-color-success) 10%, transparent);
-  font-size: var(--haze-text-sm, 14px);
+  font-size: var(--haze-text-sm);
 `;
 
 const hintListStyle = css`
   margin: var(--haze-space-2) 0 0;
   padding-left: 18px;
-  font-size: var(--haze-text-xs, 12px);
-  color: var(--haze-color-text-muted, #6b7280);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
 
   li + li {
     margin-top: 4px;

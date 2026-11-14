@@ -23,6 +23,8 @@
 // of serving a dead RPC's verdict until midnight.
 import { createRpcClient } from '@/utils/realTimeData';
 import { formatNumber } from '@/utils/format';
+// The Error-cause chain flattener (errorHandler's one copy).
+import { flattenErrorMessage } from '@/utils/errorHandler';
 // The one "one day" constant — import-free leaf.
 import { MS_PER_DAY } from '@/utils/time';
 
@@ -454,18 +456,6 @@ export function txSamplingLabel(
 
 // --- failure classification ---
 
-// Collects the error's whole cause chain: viem wraps JSON-RPC errors
-// (where "method not found" lives) several layers deep.
-const errorChainText = (error: unknown): string => {
-  const parts: string[] = [];
-  let current: unknown = error;
-  for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
-    parts.push(current.message);
-    current = (current as { cause?: unknown }).cause;
-  }
-  return parts.length > 0 ? parts.join(' ') : String(error);
-};
-
 const METHOD_UNSUPPORTED_PATTERN =
   /(method[^\n]*not[^\n]*(found|exist|available|support))|not[^\n]*supported|does not exist|unimplemented/i;
 
@@ -477,7 +467,7 @@ const RPC_WINDOW_CAP_PATTERN =
  * reason travels; raw provider text never reaches the UI.
  */
 export function classifyChartsFailure(error: unknown): 'method-not-supported' | 'rpc-error' {
-  const text = errorChainText(error);
+  const text = flattenErrorMessage(error);
   return METHOD_UNSUPPORTED_PATTERN.test(text) ? 'method-not-supported' : 'rpc-error';
 }
 
@@ -548,7 +538,7 @@ async function fetchDayGas(
         rewardPercentiles: [25],
       });
     } catch (error) {
-      const text = errorChainText(error);
+      const text = flattenErrorMessage(error);
       if (METHOD_UNSUPPORTED_PATTERN.test(text)) {
         return { point: null, reason: 'method-not-supported' };
       }
@@ -623,7 +613,7 @@ async function fetchSampledTxPerDay(
           if (Number.isFinite(count) && count >= 0) counts.set(tasks[index], count);
         } catch (error) {
           sawFailure = true;
-          if (METHOD_UNSUPPORTED_PATTERN.test(errorChainText(error))) methodUnsupported = true;
+          if (METHOD_UNSUPPORTED_PATTERN.test(flattenErrorMessage(error))) methodUnsupported = true;
         }
       }
     },

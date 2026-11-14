@@ -45,7 +45,7 @@ const dropdownMenuStyles = css`
   background: var(--haze-color-bg);
   border: 1px solid var(--haze-color-border);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--haze-shadow-lg);
   min-width: 140px;
   z-index: 10;
   overflow: hidden;

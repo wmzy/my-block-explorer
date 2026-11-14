@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { css } from '@linaria/core';
 import {
   View,
   HistoryRouter as Router,
@@ -9,6 +8,7 @@ import {
 } from '@native-router/react';
 import { ConnectionStatus } from '@/components/ServiceSetup';
 import CommandPalette from '@/components/CommandPalette';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { contractSourceLoader } from '@/services/dataloaders';
 import { deriveDocumentTitle, deriveMetaDescription } from '@/utils/metaDescribe';
 
@@ -183,15 +183,11 @@ export type AppPaths = RoutePaths<typeof routes>;
 // redirect, loader wiring, path→view module resolution).
 export { routes };
 
-const skeleton = css`
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-  color: var(--haze-color-text-secondary);
-`;
-
+// Cold-start pending view for the contract routes: the SAME shared
+// loading component and copy the Contract view's in-page loading state
+// renders, so both halves of the route show one shape.
 function ContractSkeleton() {
-  return <div className={skeleton}>Loading contract information...</div>;
+  return <LoadingState message="Loading contract information..." />;
 }
 
 // Router baseUrl shares its source of truth with the vite base: an absolute

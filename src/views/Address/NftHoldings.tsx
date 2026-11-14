@@ -24,7 +24,7 @@ import { InfoItem } from '@/components/ui/InfoGrid';
 import { Badge } from '@/components/ui/Badge';
 import { linkStyle } from '@/components/ui/DataTable';
 import { shimmerPulse } from '@/components/ui/skeleton';
-import { cellText, formatBigInt, formatNumber } from '@/utils/format';
+import { cellText, formatBigInt, formatNumber, shortTokenId } from '@/utils/format';
 
 // One contract block: head line (link + standard badge + held count) and
 // a muted meta line beneath. Rows right-align into the InfoItem value
@@ -164,10 +164,6 @@ const nftItemUnavailable = css`
   font-size: var(--haze-text-xs);
 `;
 
-// Long token ids (uint256 scale) get a head/tail cut; the row's title
-// attribute carries the full sample ids.
-const shortId = (id: string) => (id.length > 16 ? `${id.slice(0, 8)}...${id.slice(-8)}` : id);
-
 /** Exact held-count copy: '3 token ids' vs '2 ids · 12 units total'. */
 function heldCountText(holding: NftContractHolding): string {
   if (holding.standard === 'erc721') {
@@ -299,7 +295,7 @@ function NftContractRow({
       <div className={nftRowMeta}>
         {holding.sampleIds.length > 0 && (
           <span title={holding.sampleIds.join(', ')}>
-            {holding.sampleIds.map(shortId).join(', ')}
+            {holding.sampleIds.map(shortTokenId).join(', ')}
             {holding.heldCount > holding.sampleIds.length
               ? ` +${holding.heldCount - holding.sampleIds.length} more`
               : ''}

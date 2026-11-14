@@ -23,7 +23,7 @@ type TreeNode = {
 
 const containerStyles = css`
   position: relative;
-  border: 1px solid #e1e5e9;
+  border: 1px solid var(--haze-color-border);
   border-radius: 6px;
   overflow: hidden;
 `;
@@ -46,8 +46,8 @@ const treeContainerStyles = css`
   width: 260px;
   min-width: 200px;
   max-width: 260px;
-  border-right: 1px solid #e1e5e9;
-  background: #fafbfc;
+  border-right: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg-subtle);
   overflow-y: auto;
   padding: 8px;
   flex-shrink: 0;
@@ -60,7 +60,7 @@ const treeContainerStyles = css`
     max-width: none;
     max-height: 180px;
     border-right: none;
-    border-bottom: 1px solid #e1e5e9;
+    border-bottom: 1px solid var(--haze-color-border);
   }
 `;
 
@@ -80,7 +80,7 @@ const codeContainerStyles = css`
 `;
 
 const codeBlockStyles = css`
-  background: #f8f9fa;
+  background: var(--haze-color-bg-muted);
   padding: 16px;
   overflow-x: auto;
   font-family:
@@ -107,9 +107,9 @@ const copyButtonStyles = css`
   right: 8px;
   padding: 4px 10px;
   font-size: 12px;
-  color: #666;
-  background: white;
-  border: 1px solid #d0d5dd;
+  color: var(--haze-color-text-secondary);
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
   cursor: pointer;
   transition:
@@ -120,9 +120,9 @@ const copyButtonStyles = css`
   font-family: inherit;
 
   &:hover {
-    color: #333;
-    border-color: #999;
-    background: #f5f5f5;
+    color: var(--haze-color-text);
+    border-color: var(--haze-color-border-hover);
+    background: var(--haze-color-bg-muted);
   }
 `;
 

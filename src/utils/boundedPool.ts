@@ -1,20 +1,27 @@
 // Bounded-concurrency pool over an ordered list: outcomes land at their
 // input index, so the aggregate order is the input order, not completion
-// order. Four backend services and internalTxScan's runTracePool
-// hand-rolled this same shared-cursor scheduling loop; this import-free
-// leaf is the one home for it. Per-item error policy stays with the
-// caller's worker (settle/throw as before); `shouldStop` is polled before
-// claiming the next item so a worker failure can drain the pool early
+// order. Four backend services and internalTxScan's runTracePool (since
+// folded into a thin wrapper over this leaf) hand-rolled this same
+// shared-cursor scheduling loop; this import-free leaf is the one home
+// for it. Per-item error policy stays with the caller's worker
+// (settle/throw as before); `shouldStop` is polled before claiming the
+// next item so a worker failure can drain the pool early
 // (AddressScanService's unsupported-probe exit) without abandoning
-// already-claimed work.
+// already-claimed work; `onSettled` reports the running count of settled
+// items (the tracing UIs' progress disclosure — runTracePool's
+// pass-through).
 export async function runBoundedPool<TItem, TResult>(
   items: readonly TItem[],
   concurrency: number,
   worker: (item: TItem, index: number) => Promise<TResult>,
-  options: { shouldStop?: () => boolean } = {},
+  options: {
+    shouldStop?: () => boolean;
+    onSettled?: (settled: number) => void;
+  } = {},
 ): Promise<TResult[]> {
   const outcomes: TResult[] = new Array(items.length);
   let next = 0;
+  let settled = 0;
   const workers = Array.from(
     { length: Math.max(1, Math.min(concurrency, items.length)) },
     async () => {
@@ -26,6 +33,8 @@ export async function runBoundedPool<TItem, TResult>(
         next += 1;
         if (index >= items.length) return;
         outcomes[index] = await worker(items[index], index);
+        settled += 1;
+        options.onSettled?.(settled);
       }
     },
   );

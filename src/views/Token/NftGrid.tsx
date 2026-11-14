@@ -24,7 +24,7 @@ import {
   type NftMetadataOutcome,
 } from '@/services/nftMetadata';
 import { useCopyFeedback, useCopyLabel } from '@/util/useCopyFeedback';
-import { formatNumber } from '@/utils/format';
+import { formatNumber, shortTokenId } from '@/utils/format';
 import { shimmerPulse } from '@/components/ui/skeleton';
 import { NFT_ITEMS_LIMIT, type NftItem } from './nftItems';
 
@@ -186,10 +186,6 @@ const retryButton = css`
   }
 `;
 
-// Long ids (uint256 scale) get a head/tail cut inside the tile; the
-// tile's title carries the full id (twin of NftHoldings's shortId).
-const shortId = (id: string) => (id.length > 16 ? `${id.slice(0, 8)}...${id.slice(-8)}` : id);
-
 // Image with honest degradation: no image, an unresolvable one, or a
 // load failure all land on the muted placeholder. The failed state is
 // sticky per mount (retrying the <img> adds noise, not honesty).
@@ -251,7 +247,7 @@ function NftTile({ item, contract, outcome, onRetry, retrying }: NftTileProps) {
     void copyFeedback.copy(item.tokenId);
   };
 
-  const idText = `#${shortId(item.tokenId)}`;
+  const idText = `#${shortTokenId(item.tokenId)}`;
   const copyLabel = useCopyLabel(copyFeedback.state, idText);
 
   return (

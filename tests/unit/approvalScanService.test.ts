@@ -9,15 +9,7 @@
 // the call budget counting ACTUAL getLogs calls issued (two per step),
 // keeping DEFAULT_MAX_SCAN_CALLS' per-scan ceiling honest.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  encodeAbiParameters,
-  encodeEventTopics,
-  erc20Abi,
-  pad,
-  parseAbiParameters,
-  type Address,
-  type Hex,
-} from 'viem';
+import type { Address } from 'viem';
 import {
   createApprovalScanService,
   MAX_APPROVAL_PAIRS,
@@ -27,33 +19,13 @@ import {
   type MulticallContractCall,
   type ScanLog,
 } from '@/services/ApprovalScanService';
+import { APPROVAL_TOPIC, erc20Log, topicAddress } from './helpers/approvalLogs';
 
 const OWNER = '0xAbC1111111111111111111111111111111111111' as Address;
 const SPENDER_A = '0xDeF2222222222222222222222222222222222222' as Address;
 const SPENDER_B = '0x3333333333333333333333333333333333333333' as Address;
 const TOKEN_A = '0xAaBbCcDdEeFf00112233445566778899aAbBcCdD' as Address;
 const TOKEN_B = '0xB0B0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0' as Address;
-
-const APPROVAL_TOPIC = encodeEventTopics({ abi: erc20Abi, eventName: 'Approval' })[0];
-
-// On-chain topics carry the lowercase address bytes.
-const topicAddress = (address: Address): Hex => pad(address.toLowerCase() as Address, { size: 32 });
-
-const logOf = (
-  token: Address,
-  owner: Address,
-  spender: Address,
-  value: bigint,
-  blockNumber: number,
-  logIndex: number,
-): ScanLog => ({
-  address: token,
-  topics: [APPROVAL_TOPIC, topicAddress(owner), topicAddress(spender)],
-  data: encodeAbiParameters(parseAbiParameters('uint256'), [value]),
-  blockNumber: BigInt(blockNumber),
-  transactionHash: `0x${blockNumber.toString(16).padStart(64, '0')}`,
-  logIndex,
-});
 
 // Mirrors viem's event+args filtering: topic0 from the Approval signature
 // the query carries, and the indexed owner pinned into topic1.
@@ -170,12 +142,12 @@ describe('ApprovalScanService - distinct pair derivation', () => {
       logs: [
         // Same pair twice (blocks 20 and 10) → one pair, ordered by its
         // NEWEST sighting.
-        logOf(TOKEN_A, OWNER, SPENDER_A, 5n, 20, 0),
-        logOf(TOKEN_A, OWNER, SPENDER_A, 3n, 10, 1),
-        logOf(TOKEN_A, OWNER, SPENDER_B, 7n, 15, 2),
-        logOf(TOKEN_B, OWNER, SPENDER_A, 9n, 12, 3),
+        erc20Log(TOKEN_A, OWNER, SPENDER_A, 5n, 20, 0),
+        erc20Log(TOKEN_A, OWNER, SPENDER_A, 3n, 10, 1),
+        erc20Log(TOKEN_A, OWNER, SPENDER_B, 7n, 15, 2),
+        erc20Log(TOKEN_B, OWNER, SPENDER_A, 9n, 12, 3),
         // Different owner → filtered out by the topic slot entirely.
-        logOf(TOKEN_A, SPENDER_B, SPENDER_A, 11n, 18, 4),
+        erc20Log(TOKEN_A, SPENDER_B, SPENDER_A, 11n, 18, 4),
       ],
     });
 
@@ -201,10 +173,10 @@ describe('ApprovalScanService - distinct pair derivation', () => {
   it('omits zero grants and flags effectively-unlimited allowances as isMax', async () => {
     const { service } = makeHarness({
       logs: [
-        logOf(TOKEN_A, OWNER, SPENDER_A, 1n, 40, 0),
-        logOf(TOKEN_A, OWNER, SPENDER_B, 1n, 30, 1),
-        logOf(TOKEN_B, OWNER, SPENDER_A, 1n, 20, 2),
-        logOf(TOKEN_B, OWNER, SPENDER_B, 1n, 10, 3),
+        erc20Log(TOKEN_A, OWNER, SPENDER_A, 1n, 40, 0),
+        erc20Log(TOKEN_A, OWNER, SPENDER_B, 1n, 30, 1),
+        erc20Log(TOKEN_B, OWNER, SPENDER_A, 1n, 20, 2),
+        erc20Log(TOKEN_B, OWNER, SPENDER_B, 1n, 10, 3),
       ],
       allowances: new Map<string, bigint | null>([
         // Revoked to zero → omitted from rows, still counted in pairCount.
@@ -241,8 +213,8 @@ describe('ApprovalScanService - distinct pair derivation', () => {
   it('drops pairs whose allowance() reverts without failing the response', async () => {
     const { service } = makeHarness({
       logs: [
-        logOf(TOKEN_A, OWNER, SPENDER_A, 1n, 20, 0),
-        logOf(TOKEN_A, OWNER, SPENDER_B, 1n, 10, 1),
+        erc20Log(TOKEN_A, OWNER, SPENDER_A, 1n, 20, 0),
+        erc20Log(TOKEN_A, OWNER, SPENDER_B, 1n, 10, 1),
       ],
       allowances: new Map<string, bigint | null>([
         // Non-standard token: allowance() reverts.
@@ -264,7 +236,7 @@ describe('ApprovalScanService - read cap and truncation', () => {
   // the recency ordering, so the cap keeps blocks 130..31.
   const manyPairs = (): ScanLog[] =>
     Array.from({ length: 130 }, (_, i) =>
-      logOf(
+      erc20Log(
         `0x${(0x1000 + i).toString(16).padStart(40, '0')}`,
         OWNER,
         `0x${(0x2000 + i).toString(16).padStart(40, '0')}`,
@@ -307,7 +279,7 @@ describe('ApprovalScanService - adaptive chunk sizing (shared classification)', 
     // back up and burn the default 40-call budget before covering the
     // window.
     const { service, counts } = makeHarness({
-      logs: [logOf(TOKEN_A, OWNER, SPENDER_A, 1n, 9_999, 0)],
+      logs: [erc20Log(TOKEN_A, OWNER, SPENDER_A, 1n, 9_999, 0)],
       rejectRangeAbove: 4_000n,
       maxScanCalls: 40,
     });
@@ -322,7 +294,7 @@ describe('ApprovalScanService - adaptive chunk sizing (shared classification)', 
 
   it('aborts with scan-failed on a NON-retryable provider error, keeping earlier finds', async () => {
     const { service } = makeHarness({
-      logs: [logOf(TOKEN_A, OWNER, SPENDER_A, 1n, 9_999, 0)],
+      logs: [erc20Log(TOKEN_A, OWNER, SPENDER_A, 1n, 9_999, 0)],
       // First chunk succeeds (finds the log), the second call hits a
       // fatal provider error — not range-shaped, so the shared
       // classifier must NOT retry it.
@@ -373,7 +345,7 @@ describe('ApprovalScanService - adaptive chunk sizing (shared classification)', 
 describe('ApprovalScanService - scan cache and refresh', () => {
   it('serves a ~60s cache and keeps reporting the FIRST scan time', async () => {
     const { service, getLogsCalls, setNow } = makeHarness({
-      logs: [logOf(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
+      logs: [erc20Log(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
     });
 
     const first = await service.getApprovals(1, OWNER);
@@ -395,7 +367,7 @@ describe('ApprovalScanService - scan cache and refresh', () => {
 
   it('refresh=1 bypasses a fresh entry and overwrites it (new first-scan time)', async () => {
     const { service, getLogsCalls, setNow } = makeHarness({
-      logs: [logOf(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
+      logs: [erc20Log(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
     });
 
     await service.getApprovals(1, OWNER);
@@ -416,7 +388,7 @@ describe('ApprovalScanService - scan cache and refresh', () => {
 
   it('keys the cache by (chain, address, window) and clamps the window', async () => {
     const { service, getLogsCalls } = makeHarness({
-      logs: [logOf(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
+      logs: [erc20Log(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
     });
 
     const clampedLow = await service.getApprovals(1, OWNER, 0);
@@ -436,7 +408,7 @@ describe('ApprovalScanService - scan cache and refresh', () => {
 describe('ApprovalScanService - allowance read honesty', () => {
   it('reports allowance-read-failed when the multicall transport fails', async () => {
     const { service } = makeHarness({
-      logs: [logOf(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
+      logs: [erc20Log(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
       multicallError: new Error('fetch failed'),
     });
 
@@ -467,7 +439,7 @@ describe('ApprovalScanService - scan timeout timer hygiene', () => {
 
   it('clears the losing timer when the sweep completes in time', async () => {
     const { service } = makeHarness({
-      logs: [logOf(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
+      logs: [erc20Log(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
     });
 
     const pending = service.getApprovals(1, OWNER);

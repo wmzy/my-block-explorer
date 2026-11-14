@@ -31,7 +31,7 @@ vi.mock('@/database/drizzle', () => ({
                 : table === storageLayouts
                   ? 'storage_layouts'
                   : String(table);
-            return Promise.resolve([{ count: dbState.counts[name] ?? 0 }]).then(
+            return Promise.resolve([{ value: dbState.counts[name] ?? 0 }]).then(
               resolve as never,
               reject as never,
             );

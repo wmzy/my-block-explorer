@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink, useMatched } from '@native-router/react';
-import { formatGwei, formatUnits, numberToHex } from 'viem';
+import { formatUnits, numberToHex } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -27,6 +27,7 @@ import {
   formatBigInt,
   formatDateTime,
   formatGasString,
+  formatGweiLabel,
   formatNumber,
   formatRelativeTime,
 } from '@/utils/format';
@@ -668,7 +669,7 @@ export default function BlockDetail() {
                   <InfoItem label="Gas Used">{formatGasString(blockInfo.gasUsed)}</InfoItem>
                   {blockInfo.baseFeePerGas && (
                     <InfoItem label="Base Fee Per Gas">
-                      {`${formatGwei(BigInt(blockInfo.baseFeePerGas))} gwei`}
+                      {formatGweiLabel(BigInt(blockInfo.baseFeePerGas))}
                     </InfoItem>
                   )}
                   {burntFees !== undefined && (

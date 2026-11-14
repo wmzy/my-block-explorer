@@ -1,9 +1,9 @@
 import React from 'react';
 import { css } from '@linaria/core';
-import type { RpcError } from '../types/rpc';
+import type { RpcErrorInfo } from '../types/rpc';
 
 type Props = {
-  error: RpcError;
+  error: RpcErrorInfo;
   onConfigureRpc: () => void;
   onDismiss: () => void;
 };

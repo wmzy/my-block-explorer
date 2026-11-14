@@ -5,8 +5,9 @@
  * the list, count, and export queries all agree on what a filter matches.
  */
 
-import { and, desc, sql } from 'drizzle-orm';
+import { and, count, desc, sql } from 'drizzle-orm';
 import { db } from '../database/drizzle';
+import { sqlCountTotal } from '../database/init';
 import { contractEvents } from '../database/schema';
 import { buildEventFilterConditions, type EventQueryFilters } from './EventIndexingService';
 import { csvTimestamp, escapeCsvField } from '../utils/csv';
@@ -21,11 +22,10 @@ export const getFilteredEventCount = async (
   filters: EventQueryFilters,
 ): Promise<number> => {
   const rows = await db
-    .select({ count: sql<number>`count(*)` })
+    .select({ value: count() })
     .from(contractEvents)
     .where(and(...buildEventFilterConditions(chainId, address, filters)));
-  // DuckDB count(*) can surface as bigint; normalize for arithmetic/response use.
-  return Number(rows[0]?.count ?? 0);
+  return sqlCountTotal(rows);
 };
 
 export const fetchFilteredEventsForExport = async (

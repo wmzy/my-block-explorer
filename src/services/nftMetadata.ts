@@ -20,6 +20,8 @@ import { createRpcClient } from '@/utils/realTimeData';
 import { createTtlLruCache } from '@/utils/ttlLruCache';
 // Canonical record-shape guard (rejects arrays) — import-free leaf.
 import { isRecord } from '@/utils/isRecord';
+// The Error-cause chain flattener (errorHandler's one copy).
+import { flattenErrorMessage } from '@/utils/errorHandler';
 import { IPFS_GATEWAY_STORAGE_KEY } from '@/util/storageKeys';
 import { readStorageItem, removeStorageItem, writeStorageItem } from '@/util/storageAccess';
 
@@ -215,25 +217,13 @@ export function pickNftMetadataFields(json: unknown): NftMetadataFields | null {
 
 // --- failure classification ---
 
-// Collects the error's whole cause chain (gasHistory-style): viem wraps
-// contract reverts several layers deep.
-const errorChainText = (error: unknown): string => {
-  const parts: string[] = [];
-  let current: unknown = error;
-  for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
-    parts.push(current.message);
-    current = (current as { cause?: unknown }).cause;
-  }
-  return parts.length > 0 ? parts.join(' ') : String(error);
-};
-
 /**
  * Whether an error chain carries a contract revert (the call executed
  * and the contract refused) — the definitive-answer marker. Anything
  * else (transport, timeout, decode) is retryable.
  */
 export function isContractRevertError(error: unknown): boolean {
-  return /revert/i.test(errorChainText(error));
+  return /revert/i.test(flattenErrorMessage(error));
 }
 
 // --- batch resolution ---

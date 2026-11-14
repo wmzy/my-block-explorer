@@ -50,8 +50,8 @@ const variantMap = {
 
 const dangerStyle = css`
   --haze-color-primary: var(--haze-color-danger);
-  --haze-color-primary-hover: #b91c1c;
-  --haze-color-primary-active: #991b1b;
+  --haze-color-primary-hover: var(--haze-color-danger-hover);
+  --haze-color-primary-active: var(--haze-color-danger-active);
 `;
 
 export type ButtonProps = {

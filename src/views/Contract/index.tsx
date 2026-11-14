@@ -13,6 +13,7 @@ import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { BackendOfflineState } from '@/components/ui/ErrorState';
 import { CoverageBadge } from '@/components/ui/CoverageBadge';
 import { Button } from '@/components/ui/Button';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { linkStyle } from '@/components/ui/DataTable';
 import { SourceCodeViewer } from '@/components/SourceCodeViewer';
@@ -61,7 +62,6 @@ import {
   badgeWarn,
   cardStyles,
   errorStyles,
-  loadingStyles,
   noticeBoxError,
   noticeBoxOk,
   noticeBoxWarn,
@@ -235,7 +235,7 @@ const proxyToggleStyles = css`
     &.active {
       background: var(--haze-color-bg);
       color: var(--haze-color-primary);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--haze-shadow-sm);
     }
   }
 `;
@@ -1248,7 +1248,7 @@ export default function Contract() {
           />
         )}
 
-        {loading && <div className={loadingStyles}>Loading contract information...</div>}
+        {loading && <LoadingState message="Loading contract information..." />}
 
         {isNotAContractState ? (
           // P1-2: the backend reports this address carries no code (C-1

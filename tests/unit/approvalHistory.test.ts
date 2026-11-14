@@ -9,98 +9,26 @@
 // value of '0' stays visible. Pair semantics stay pinned by
 // approvalScanService.test.ts / approvalScanKinds.test.ts.
 import { describe, it, expect } from 'vitest';
-import {
-  encodeAbiParameters,
-  encodeEventTopics,
-  erc20Abi,
-  erc1155Abi,
-  numberToHex,
-  parseAbiParameters,
-  pad,
-  type Address,
-  type Hex,
-} from 'viem';
+import { encodeEventTopics, type Address } from 'viem';
 import {
   createApprovalScanService,
   MAX_APPROVAL_HISTORY_EVENTS,
   type ApprovalScanClient,
   type ScanLog,
 } from '@/services/ApprovalScanService';
+import {
+  erc20Log,
+  erc721Log,
+  erc1155Log,
+  topicAddress,
+  txHashOf,
+} from './helpers/approvalLogs';
 
 const OWNER = '0xAbC1111111111111111111111111111111111111' as Address;
 const SPENDER_A = '0xDeF2222222222222222222222222222222222222' as Address;
 const OPERATOR_B = '0x3333333333333333333333333333333333333333' as Address;
 const TOKEN_NFT = '0xAaBbCcDdEeFf00112233445566778899aAbBcCdD' as Address;
 const TOKEN_20 = '0xB0B0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0' as Address;
-
-const APPROVAL_TOPIC = encodeEventTopics({ abi: erc20Abi, eventName: 'Approval' })[0];
-const APPROVAL_FOR_ALL_TOPIC = encodeEventTopics({
-  abi: erc1155Abi,
-  eventName: 'ApprovalForAll',
-})[0];
-// ERC-721 Approval shares the ERC-20 signature hash by construction.
-const ERC721_APPROVAL_TOPIC = APPROVAL_TOPIC;
-
-// On-chain topics carry the lowercase address bytes. (The cast is needed
-// by tsc — pad wants a 0x-template — and not flagged by eslint.)
-const topicAddress = (address: Address): Hex => pad(address.toLowerCase() as Address, { size: 32 });
-
-const txHashOf = (block: number): Hex => `0x${block.toString(16).padStart(64, '0')}`;
-
-const erc20Log = (
-  token: Address,
-  owner: Address,
-  spender: Address,
-  value: bigint,
-  block: number,
-  logIndex: number,
-): ScanLog => ({
-  address: token,
-  topics: [APPROVAL_TOPIC, topicAddress(owner), topicAddress(spender)],
-  data: encodeAbiParameters(parseAbiParameters('uint256'), [value]),
-  blockNumber: BigInt(block),
-  transactionHash: txHashOf(block),
-  logIndex,
-});
-
-// ERC-721 Approval: owner, approved AND tokenId are all indexed → 4 topics.
-const erc721Log = (
-  token: Address,
-  owner: Address,
-  approved: Address,
-  tokenId: bigint,
-  block: number,
-  logIndex: number,
-): ScanLog => ({
-  address: token,
-  topics: [
-    ERC721_APPROVAL_TOPIC,
-    topicAddress(owner),
-    topicAddress(approved),
-    numberToHex(tokenId, { size: 32 }),
-  ],
-  data: '0x',
-  blockNumber: BigInt(block),
-  transactionHash: txHashOf(block),
-  logIndex,
-});
-
-// ERC-1155 ApprovalForAll: owner + operator indexed, the flag in data.
-const erc1155Log = (
-  token: Address,
-  owner: Address,
-  operator: Address,
-  approved: boolean,
-  block: number,
-  logIndex: number,
-): ScanLog => ({
-  address: token,
-  topics: [APPROVAL_FOR_ALL_TOPIC, topicAddress(owner), topicAddress(operator)],
-  data: encodeAbiParameters(parseAbiParameters('bool'), [approved]),
-  blockNumber: BigInt(block),
-  transactionHash: txHashOf(block),
-  logIndex,
-});
 
 // --- harness (approvalScanKinds.test.ts shape) ------------------------------
 

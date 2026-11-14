@@ -8,6 +8,8 @@
 // coercion) — the RPC layer owns bigint conversion.
 
 import { HEX_ADDRESS_RE } from './address';
+// Canonical record-shape guard (rejects arrays) — import-free leaf.
+import { isRecord } from './isRecord';
 
 /** One account's override; at least one field is required per entry. */
 export type StateOverrideEntry = {
@@ -49,9 +51,6 @@ const preview = (raw: unknown): string => {
   return text.length > 42 ? `${text.slice(0, 42)}…` : text;
 };
 
-const isObject = (raw: unknown): raw is Record<string, unknown> =>
-  typeof raw === 'object' && raw !== null && !Array.isArray(raw);
-
 // Validates one state/stateDiff map: every key and value must be a
 // 32-byte hex string. Returns null (after appending details) if invalid.
 const parseStorageMap = (
@@ -60,7 +59,7 @@ const parseStorageMap = (
   raw: unknown,
   details: string[],
 ): Record<`0x${string}`, `0x${string}`> | null => {
-  if (!isObject(raw)) {
+  if (!isRecord(raw)) {
     details.push(
       `${address}.${field}: must be an object mapping 32-byte slot hex to 32-byte value hex`,
     );
@@ -97,7 +96,7 @@ const parseStorageMap = (
  * per problem ('<address>.<field>: …' or 'stateOverride: …').
  */
 export function parseStateOverride(raw: unknown): StateOverrideParseResult {
-  if (!isObject(raw)) {
+  if (!isRecord(raw)) {
     return { ok: false, details: ['stateOverride: must be an object keyed by address'] };
   }
 
@@ -115,7 +114,7 @@ export function parseStateOverride(raw: unknown): StateOverrideParseResult {
       continue;
     }
 
-    if (!isObject(entryRaw)) {
+    if (!isRecord(entryRaw)) {
       details.push(`${address}: must be an object`);
       continue;
     }

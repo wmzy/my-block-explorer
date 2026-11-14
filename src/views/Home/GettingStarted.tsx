@@ -6,11 +6,11 @@
 // is actually readable; dismissal (or a backend connecting mid-session)
 // releases the redirect. The card itself is presentational — visibility
 // lives in the pure helpers below so the matrix is unit-testable.
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
-import { useCopyFeedback, useCopyLabel } from '@/util/useCopyFeedback';
+import { CopyButton, copyButtonBase } from '@/components/ui/CopyButton';
 import {
   readStorageItem,
   writeStorageItem,
@@ -296,6 +296,16 @@ const commandRowStyle = css`
   margin-bottom: var(--haze-space-6);
 `;
 
+// Standard bordered copy chrome (copyButtonBase) with this row's size
+// delta — the shared CopyButton owns the label swap.
+const copyButtonStyle = cx(
+  copyButtonBase,
+  css`
+    font-size: var(--haze-text-sm);
+    flex-shrink: 0;
+  `,
+);
+
 const commandStyle = css`
   flex: 1;
   min-width: 0;
@@ -332,14 +342,6 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
   // remembered chain when valid, preferred entry chain otherwise. Never
   // a guessed chain id.
   const { blocks: blocksPath, contracts: contractsPath } = resolveGuideChainPaths();
-
-  // Copy pattern shared with SetupRequiredScreen: shared copyText (async
-  // Clipboard API or legacy fallback) with the shared label swap
-  // (useCopyLabel — 'Copied ✓' on success, 'Copy failed' on a denied
-  // write). The 1500ms reset this site used normalizes to the hook's
-  // 2000ms default (intentional).
-  const { state: copyState, copy } = useCopyFeedback();
-  const copyLabel = useCopyLabel(copyState, 'Copy');
 
   return (
     <div className={containerStyle}>
@@ -419,13 +421,11 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
 
             <div className={commandRowStyle}>
               <code className={commandStyle}>{GETTING_STARTED_COMMAND}</code>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void copy(GETTING_STARTED_COMMAND)}
-              >
-                {copyLabel}
-              </Button>
+              <CopyButton
+                text={GETTING_STARTED_COMMAND}
+                label="Copy"
+                className={copyButtonStyle}
+              />
             </div>
 
             <div className={footerRowStyle}>

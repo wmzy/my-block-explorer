@@ -41,6 +41,7 @@ import {
   createProviderCeilingMemory,
 } from '../utils/scanLadder';
 import { createTtlLruCache } from '../utils/ttlLruCache';
+import { chunk } from '../utils/chunk';
 import { isAddressShape } from '../utils/address';
 import { errorMessage } from '../utils/errorHandler';
 import { MULTICALL3_ADDRESS, readMulticallResult } from '../utils/multicall';
@@ -721,8 +722,7 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
       if (spec !== null) specs.push(spec);
     }
     const rows: DiscoveredApproval[] = [];
-    for (let i = 0; i < specs.length; i += MULTICALL_BATCH_SIZE) {
-      const batch = specs.slice(i, i + MULTICALL_BATCH_SIZE);
+    for (const batch of chunk(specs, MULTICALL_BATCH_SIZE)) {
       const outcomes = await client.multicall({
         contracts: batch.map(spec => spec.call),
         allowFailure: true,

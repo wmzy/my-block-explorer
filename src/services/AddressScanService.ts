@@ -53,8 +53,9 @@
  * process to 'error' with a resume hint.
  */
 
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
+import { and, count, desc, eq, lt } from 'drizzle-orm';
 import { db } from '../database/drizzle';
+import { sqlCountTotal } from '../database/init';
 import {
   addressScanJobs,
   addressScanFindings,
@@ -574,7 +575,7 @@ const updateScanJobRow = async (
 
 const countFindings = async (chainId: number, address: string): Promise<number> => {
   const rows = await db
-    .select({ count: sql<number>`count(*)` })
+    .select({ value: count() })
     .from(addressScanFindings)
     .where(
       and(
@@ -582,7 +583,7 @@ const countFindings = async (chainId: number, address: string): Promise<number> 
         eq(addressScanFindings.address, address.toLowerCase()),
       ),
     );
-  return Number(rows[0]?.count ?? 0);
+  return sqlCountTotal(rows);
 };
 
 // Live count of recorded internal-tx rows — same idiom as countFindings;
@@ -590,7 +591,7 @@ const countFindings = async (chainId: number, address: string): Promise<number> 
 // increment (force-replace resets ride on the row rewrite).
 const countInternalTxs = async (chainId: number, address: string): Promise<number> => {
   const rows = await db
-    .select({ count: sql<number>`count(*)` })
+    .select({ value: count() })
     .from(addressScanInternalTxs)
     .where(
       and(
@@ -598,7 +599,7 @@ const countInternalTxs = async (chainId: number, address: string): Promise<numbe
         eq(addressScanInternalTxs.address, address.toLowerCase()),
       ),
     );
-  return Number(rows[0]?.count ?? 0);
+  return sqlCountTotal(rows);
 };
 
 // Internal-tx rows share the findings' (chain, address) key prefix, so
@@ -763,7 +764,7 @@ export const listInternalTransactions = async (
     .limit(pagination.limit)
     .offset(pagination.offset);
   const countRows = await db
-    .select({ count: sql<number>`count(*)` })
+    .select({ value: count() })
     .from(addressScanInternalTxs)
     .where(where);
   return {
@@ -780,7 +781,7 @@ export const listInternalTransactions = async (
       // only keeps the mapping total — the column is notNull.
       timestamp: toIsoTimestamp(row.blockTimestamp) ?? new Date(0).toISOString(),
     })),
-    total: Number(countRows[0]?.count ?? 0),
+    total: sqlCountTotal(countRows),
     offset: pagination.offset,
     limit: pagination.limit,
   };

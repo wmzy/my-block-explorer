@@ -10,6 +10,8 @@ import {
   type Hex,
 } from 'viem';
 import { HEX_ADDRESS_RE } from './address';
+// BigInt-safe JSON.stringify replacer — import-free leaf.
+import { bigintJsonReplacer } from './jsonReplacer';
 
 export type DecodedFunctionCall = {
   functionName: string;
@@ -250,7 +252,7 @@ export function formatArgValue(value: unknown): string {
   }
   if (typeof value === 'object' && value !== null) {
     try {
-      return JSON.stringify(value, (_k, v) => (typeof v === 'bigint' ? v.toString() : v));
+      return JSON.stringify(value, bigintJsonReplacer);
     } catch {
       return String(value);
     }

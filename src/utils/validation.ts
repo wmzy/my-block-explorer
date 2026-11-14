@@ -316,3 +316,28 @@ export function parseChainAndAddressParams(
   }
   return { chainId, address: verdict.checksummed.toLowerCase() as `0x${string}` };
 }
+
+/**
+ * Parse an absolute http(s) URL — the shared RPC-endpoint field check of
+ * the chains custom-register and rpc-config routes. The result says
+ * WHICH check failed so each caller can keep its field-prefixed error
+ * message ('rpcUrl must be...' vs 'url must be...'); the parsed URL is
+ * returned for callers that need it (both current routes validate only
+ * and store the raw string).
+ */
+export type ParsedHttpUrl =
+  | { ok: true; url: URL }
+  | { ok: false; reason: 'syntax' | 'protocol' };
+
+export function parseHttpUrl(raw: string): ParsedHttpUrl {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { ok: false, reason: 'syntax' };
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return { ok: false, reason: 'protocol' };
+  }
+  return { ok: true, url };
+}

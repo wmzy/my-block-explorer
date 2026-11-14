@@ -10,8 +10,8 @@
 // process, and event data / indexing ranges have their own management on
 // the Events page. The route response documents that scope so the caller
 // can show it honestly.
-import { eq, sql } from 'drizzle-orm';
-import { db } from '../database/init';
+import { count, eq } from 'drizzle-orm';
+import { db, sqlCountTotal } from '../database/init';
 import { contractSources, storageLayouts } from '../database/schema';
 import { createLogger } from '../server/logger';
 
@@ -22,11 +22,6 @@ export type ClearedChainCacheCounts = {
   contractSources: number;
   storageLayouts: number;
 };
-
-// DuckDB surfaces count(*) through the adapter as a string in some shapes
-// (see EventIndexingService's notes); normalize once so the response is
-// always a real number.
-const rowsToCount = (rows: Array<{ count: unknown }>): number => Number(rows[0]?.count ?? 0);
 
 export class ChainCacheService {
   /**
@@ -40,18 +35,18 @@ export class ChainCacheService {
   async clearChainCachedData(chainId: number): Promise<ClearedChainCacheCounts> {
     try {
       const sourceCountRows = await db
-        .select({ count: sql<number>`count(*)` })
+        .select({ value: count() })
         .from(contractSources)
         .where(eq(contractSources.chainId, chainId));
-      const contractSourcesCleared = rowsToCount(sourceCountRows);
+      const contractSourcesCleared = sqlCountTotal(sourceCountRows);
 
       await db.delete(contractSources).where(eq(contractSources.chainId, chainId));
 
       const layoutCountRows = await db
-        .select({ count: sql<number>`count(*)` })
+        .select({ value: count() })
         .from(storageLayouts)
         .where(eq(storageLayouts.chainId, chainId));
-      const storageLayoutsCleared = rowsToCount(layoutCountRows);
+      const storageLayoutsCleared = sqlCountTotal(layoutCountRows);
 
       await db.delete(storageLayouts).where(eq(storageLayouts.chainId, chainId));
 

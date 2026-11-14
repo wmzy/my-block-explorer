@@ -20,7 +20,7 @@ import {
 } from '../services/ContractVerifyService';
 import { compileVerifyService, CompileVerifyHttpError } from '../services/CompileVerifyService';
 import { contractSourceService } from '../services/ContractSourceService';
-import { respondError } from '../utils/api-error';
+import { readJsonBody, respondError } from '../utils/api-error';
 import { isRecord } from '../utils/isRecord';
 import { safeJsonResponse } from '../utils/serialization';
 
@@ -45,7 +45,8 @@ const contractVerifyRateLimiter = createRateLimiter({
 //   — Sourcify's domain answer, message verbatim
 // - 400 invalid_files, 502 sourcify_unreachable — the shared respondError
 //   envelope ({error, message, statusCode, timestamp}); structural bundle
-//   problems / upstream unavailable
+//   problems / upstream unavailable. Malformed raw JSON answers the shared
+//   readJsonBody 400 invalid_json instead.
 app.post(
   '/chains/:chainId/contracts/:address/verify',
   requireAdminTokenIfConfigured,
@@ -54,12 +55,7 @@ app.post(
     const chainId = getValidatedChainId(c.req.param('chainId'));
     const address = getValidatedAddress(c.req.param('address'));
 
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      body = null;
-    }
+    const body = await readJsonBody(c);
     const validation = validateVerificationFiles(isRecord(body) ? body.files : undefined);
     if (!validation.ok) {
       return respondError(c, 400, 'invalid_files', validation.message);
@@ -121,7 +117,8 @@ app.post(
 // - 200 { verified: true, verificationSource: 'manual', verificationStatus?,
 //        contractSource? } — contractSource is the freshly re-read source
 //   (same shape as GET .../source); omitted only when the read-back failed
-// - 400 missing_fields | invalid_abi — the shared respondError envelope
+// - 400 missing_fields | invalid_abi (malformed raw JSON: the shared
+//   readJsonBody invalid_json) — the shared respondError envelope
 //   ({error, message, statusCode, timestamp})
 app.post(
   '/chains/:chainId/contracts/:address/verify/manual',
@@ -131,12 +128,7 @@ app.post(
     const chainId = getValidatedChainId(c.req.param('chainId'));
     const address = getValidatedAddress(c.req.param('address'));
 
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      body = null;
-    }
+    const body = await readJsonBody(c);
 
     const record = isRecord(body) ? body : {};
     const abi = typeof record.abi === 'string' ? record.abi : undefined;
@@ -297,6 +289,7 @@ app.get('/chains/:chainId/contracts/:address/verify/compilers', async c => {
 //   outcomes, answered without touching stored data
 // - 400 { error: 'invalid_input'|'contract_name_required'|'unknown_contract'|
 //         'not_a_contract', message, candidates? }
+// - 400 invalid_json (malformed raw JSON) — the shared readJsonBody envelope
 // - 502 { error: 'compilers_unavailable'|'compiler_unavailable'|
 //         'rpc_unavailable', message } — the network need is named
 // - 500 { error: 'compile_failed', message } — the compiler build itself
@@ -309,12 +302,7 @@ app.post(
     const chainId = getValidatedChainId(c.req.param('chainId'));
     const address = getValidatedAddress(c.req.param('address'));
 
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      body = null;
-    }
+    const body = await readJsonBody(c);
     const record = isRecord(body) ? body : {};
 
     let outcome;

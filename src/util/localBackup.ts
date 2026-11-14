@@ -35,6 +35,8 @@ import { LABEL_MAX_LENGTH, NOTE_MAX_LENGTH } from '@/utils/labelContract';
 // Address shape (0x + 40 hex chars) — the canonical regex from
 // utils/address.ts, the same shape tier every address surface uses.
 import { HEX_ADDRESS_RE } from '@/utils/address';
+// Canonical record-shape guard (rejects arrays) — import-free leaf.
+import { isRecord } from '@/utils/isRecord';
 import {
   CUSTOM_ABI_KEY_RE,
   IPFS_GATEWAY_STORAGE_KEY,
@@ -161,9 +163,6 @@ export type ParseBackupError =
 /** parseBackup result: validated parts, or a typed error — never both, never neither. */
 export type ParsedBackup = { ok: true; file: BackupFile } | { ok: false; error: ParseBackupError };
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const malformed = (message: string): ParsedBackup => ({
   ok: false,
   error: { kind: 'malformed', message },
@@ -175,7 +174,7 @@ const malformed = (message: string): ParsedBackup => ({
  * not a valid row; the caller decides reject-the-file vs skip-the-row.
  */
 export function parseBackupLabelRow(row: unknown): BackupLabelRow | null {
-  if (!isPlainObject(row)) return null;
+  if (!isRecord(row)) return null;
   const { chainId, address, label, note, source, updatedAt } = row;
   if (typeof chainId !== 'number' || !Number.isInteger(chainId) || chainId <= 0) return null;
   if (typeof address !== 'string' || !HEX_ADDRESS_RE.test(address)) return null;
@@ -195,7 +194,7 @@ export function parseBackupLabelRow(row: unknown): BackupLabelRow | null {
 
 /** Shape guard for one custom-chain row (full-URL form). */
 export function parseBackupChainRow(row: unknown): BackupCustomChainRow | null {
-  if (!isPlainObject(row)) return null;
+  if (!isRecord(row)) return null;
   const { chainId, name, symbol, decimals, rpcUrl } = row;
   if (typeof chainId !== 'number' || !Number.isInteger(chainId) || chainId <= 0) return null;
   if (typeof name !== 'string' || name.length === 0) return null;
@@ -218,7 +217,7 @@ export function parseBackup(json: string): ParsedBackup {
   } catch {
     return { ok: false, error: { kind: 'not_json', message: 'The file is not valid JSON.' } };
   }
-  if (!isPlainObject(raw)) return malformed('The backup must be a JSON object.');
+  if (!isRecord(raw)) return malformed('The backup must be a JSON object.');
 
   if (typeof raw.version !== 'number' || !SUPPORTED_BACKUP_VERSIONS.includes(raw.version)) {
     const found =
@@ -270,7 +269,7 @@ export function parseBackup(json: string): ParsedBackup {
   }
 
   const { browser } = raw;
-  if (!isPlainObject(browser)) return malformed('browser must be an object.');
+  if (!isRecord(browser)) return malformed('browser must be an object.');
   const { watchlist, theme, ipfsGateway, customAbis } = browser;
 
   let parsedWatchlist: string[] | null = null;
@@ -305,7 +304,7 @@ export function parseBackup(json: string): ParsedBackup {
   for (let i = 0; i < abiRows.length; i++) {
     const row = abiRows[i];
     if (
-      !isPlainObject(row) ||
+      !isRecord(row) ||
       typeof row.key !== 'string' ||
       typeof row.abi !== 'string' ||
       row.abi.length === 0
@@ -337,7 +336,7 @@ export function parseBackup(json: string): ParsedBackup {
     const seenNotes = new Set<string>();
     for (let i = 0; i < noteRows.length; i++) {
       const row = noteRows[i];
-      if (!isPlainObject(row)) {
+      if (!isRecord(row)) {
         return malformed(`browser.privateNotes[${i}] must be a {chainId, address, note} object.`);
       }
       const { chainId, address, note } = row;

@@ -17,7 +17,13 @@ import {
   tableShellStyle,
 } from '@/components/ui/DataTable';
 import { spinnerBase } from '@/components/ui/Button';
-import { formatDateTime, formatFixedDecimals, formatNumber, truncateMiddle } from '@/utils/format';
+import {
+  formatAddress,
+  formatDateTime,
+  formatFixedDecimals,
+  formatHash,
+  formatNumber,
+} from '@/utils/format';
 import { errorMessage } from '@/utils/errorHandler';
 import { useGenerationGuard } from '@/util/useGenerationGuard';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
@@ -792,13 +798,13 @@ const performanceToggleButton = css`
   }
 `;
 
-// Helper functions — thin N/A-fallback wrappers over the shared
-// truncateMiddle (local lead/tail preserved: addresses 6/4, hashes 10/8).
-const formatAddress = (address: string): string =>
-  address ? truncateMiddle(address, 6, 4) : 'N/A';
+// Helper functions — thin N/A-fallback wrappers over the canonical
+// formatters (addresses 6/4 via formatAddress(addr, 4), hashes 10/8 via
+// formatHash(hash, 8)); only the blank-cell fallback is local.
+const formatAddressCell = (address: string): string =>
+  address ? formatAddress(address, 4) : 'N/A';
 
-const formatTransactionHash = (hash: string): string =>
-  hash ? truncateMiddle(hash, 10, 8) : 'N/A';
+const formatTransactionHash = (hash: string): string => (hash ? formatHash(hash, 8) : 'N/A');
 
 const formatValue = (value?: string): string => {
   if (!value) return 'N/A';
@@ -1100,7 +1106,7 @@ export const EventRow = React.memo(({
               href={`/chain/${chainId}/address/${event.from}`}
               style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
             >
-              {formatAddress(event.from)}
+              {formatAddressCell(event.from)}
             </a>
           ) : (
             'N/A'
@@ -1112,7 +1118,7 @@ export const EventRow = React.memo(({
               href={`/chain/${chainId}/address/${event.to}`}
               style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
             >
-              {formatAddress(event.to)}
+              {formatAddressCell(event.to)}
             </a>
           ) : (
             'N/A'

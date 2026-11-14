@@ -37,14 +37,13 @@ import {
   muted,
   retryRow,
   summaryLine,
+  traceOneTxOutcome,
 } from '@/components/internalTxnsShared';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
 import { useLazyExpand } from '@/util/useLazyExpand';
-import { fetchCallTraceTree, rpcRequest } from '@/utils/callTraceRpc';
-import { errorMessage } from '@/utils/errorHandler';
+import { rpcRequest } from '@/utils/callTraceRpc';
 import { cellText, formatHash, formatNumber, formatValue } from '@/utils/format';
 import { runTracePool, TRACE_CONCURRENCY } from '@/utils/internalTxScan';
-import { isTraceUnsupportedError } from '@/utils/traceFormat';
 import {
   blockInternalTxnsSummary,
   blockTraceTruncationLabel,
@@ -173,21 +172,13 @@ const fetchBlockTxHashes = async (chainId: number, blockHash: string): Promise<s
   return hashes;
 };
 
-// Trace one of the block's transactions through the family's shared
-// fetch (utils/callTraceRpc — the address tab's and the Call Trace
-// card's request shape and cast).
-const traceOneTx = async (chainId: number, hash: string): Promise<BlockTraceTxOutcome> => {
-  try {
-    const root = await fetchCallTraceTree(chainId, hash);
-    if (root === null) return { hash, status: 'traced', rows: [], truncated: false };
-    return { hash, status: 'traced', ...flattenBlockInternalFrames(hash, root) };
-  } catch (err) {
-    const message = errorMessage(err);
-    return isTraceUnsupportedError(err)
-      ? { hash, status: 'unsupported', message }
-      : { hash, status: 'failed', message };
-  }
-};
+// Trace one of the block's transactions through the shared skeleton
+// (components/internalTxnsShared: the family fetch, the honest
+// no-calls-recorded short-circuit, and the unsupported/failed catch
+// shaping — the address tab runs the same shaping); the sweep injects
+// its every-frame-below-the-top-level flatten step.
+const traceOneTx = (chainId: number, hash: string): Promise<BlockTraceTxOutcome> =>
+  traceOneTxOutcome(chainId, hash, root => flattenBlockInternalFrames(hash, root));
 
 type SweepResult = {
   aggregate: BlockInternalTxnsAggregate;

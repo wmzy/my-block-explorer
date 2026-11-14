@@ -31,6 +31,24 @@ export function errorMessage(error: unknown, fallback?: string): string {
 }
 
 /**
+ * Flatten an error's `cause` chain into one line: each Error hop's
+ * message, space-joined, up to 5 hops deep. viem wraps JSON-RPC errors
+ * (where "method not found" lives) several layers deep, so failure
+ * classifiers must see the whole chain; non-Error input (or a chain with
+ * zero Error hops) renders the value's string form. The one home for the
+ * chart/gas/NFT classifiers' identical walks.
+ */
+export function flattenErrorMessage(error: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
+    parts.push(current.message);
+    current = (current as { cause?: unknown }).cause;
+  }
+  return parts.length > 0 ? parts.join(' ') : String(error);
+}
+
+/**
  * Retry decorator
  */
 export function withRetry<T extends unknown[], R>(

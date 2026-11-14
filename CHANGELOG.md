@@ -9,6 +9,38 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-14 duplication review fix wave round 8 (4 read-only scouts +
+  6 concurrent fix agents + integration)** — the round-8 review's 27
+  findings adjudicated (16 fixed, 6 newly deferred, 5 verified
+  deliberate); net −336 lines / 57 files. All verified: tsc 0 errors,
+  eslint 0 errors, `vitest --changed --maxWorkers=4` 298 files / 3861
+  tests green after integration seam fixes, `pnpm build` green, dark-theme
+  browser smoke on the built bundle (DeepScan panel and SourceCodeViewer
+  now follow the theme; zero hardcoded light hexes on the contract page).
+  **Canonical migrations** — the count(*) idiom is gone (14 total-count
+  sites → drizzle `count()` + `sqlCountTotal`; real-DuckDB integration
+  test pins numeric totals); `parseHttpUrl` (one URL validator for the
+  chains/rpc-config routes); `parseHttpErrorBody` exported from util/http
+  (addressScan's copy deleted); verify.ts's three hand-rolled JSON parses
+  → readJsonBody (malformed JSON now `invalid_json`); `runBoundedPool`
+  gained `onSettled` and runTracePool is a one-line delegate;
+  `flattenErrorMessage` (errorHandler) + `errorChainText` (traceFormat)
+  collapse five duplicated error-walk implementations; `traceOneTxOutcome`
+  shared skeleton (Address/Blocks internal-tx twins); `shortTokenId`,
+  `formatGweiLabel`, `formatValueAmount` (format.ts) with corpus-proven
+  byte-equality; formatNumber's bigint branch no longer loses precision
+  past 2^53; three isRecord re-declarations deleted; RpcError type
+  renamed `RpcErrorInfo`; approval ScanLog fixture builders converged.
+  **Real bugs fixed** — DeepScan used nonexistent haze tokens
+  (`--haze-border`/`--haze-surface`) so dark theme rendered it as the
+  only hardcoded-light panel; SourceCodeViewer's bootstrap hex palette
+  tokenized (was unreadable in dark mode); SetupRequiredScreen's copy
+  button had been invisible since landing (hover-reveal selector on a
+  linaria-hashed class name → opacity 0 forever) — now an always-visible
+  CopyButton. **Dead code deleted** — `src/server/create-server.ts`, the
+  whole utils barrel (`src/utils/index.ts` + its test; product importers
+  were zero — deep imports are now the only convention), the orphaned
+  tests/mocks/rpcManager.mock.ts helper.
 - **2026-11-13 duplication review fix wave round 7 (4 read-only scouts +
   5 concurrent fix agents + integration)** — the round-7 review's findings
   all fixed; net +~600 lines across ~70 files (the hex-island restyle adds

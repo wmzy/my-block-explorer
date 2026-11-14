@@ -10,6 +10,7 @@ import { getValidatedChainId } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { redactUrl, requestSeesFullUrl } from '../middleware/rpc-url-visibility';
 import { readJsonBody, respondError } from '../utils/api-error';
+import { parseHttpUrl } from '../utils/validation';
 
 const app = new Hono();
 
@@ -81,15 +82,16 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, async c => {
     return respondError(c, 400, 'invalid_url', 'url must be a string');
   }
 
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(url);
-  } catch {
-    return respondError(c, 400, 'invalid_url', 'url must be a valid absolute URL');
-  }
-
-  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    return respondError(c, 400, 'invalid_url', 'url must use the http or https protocol');
+  const parsedUrl = parseHttpUrl(url);
+  if (!parsedUrl.ok) {
+    return respondError(
+      c,
+      400,
+      'invalid_url',
+      parsedUrl.reason === 'protocol'
+        ? 'url must use the http or https protocol'
+        : 'url must be a valid absolute URL',
+    );
   }
 
   if (

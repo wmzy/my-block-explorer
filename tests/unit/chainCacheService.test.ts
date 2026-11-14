@@ -1,8 +1,8 @@
 // ChainCacheService contract: a dev-chain reset clear deletes ONLY the
 // chain's rows in the two immutable fetch caches (contract_sources,
 // storage_layouts), counts each table immediately before its delete and
-// reports those counts verbatim (normalizing DuckDB's string count(*)),
-// and lets failures propagate so the route can answer 500. The drizzle
+// reports those counts verbatim, and lets failures propagate so the
+// route can answer 500. The drizzle
 // client is faked (storageLayoutService.test.ts pattern) with the REAL
 // schema tables, so the captured predicates carry genuine drizzle
 // columns and bind values.
@@ -10,13 +10,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { contractSources, storageLayouts } from '@/database/schema';
 
 const state = vi.hoisted(() => {
-  // rows per table as count(*) would report them (string on purpose for
-  // one table: the adapter surfaces DuckDB counts as strings; the record
-  // type stays wide so per-table lookups and resets mix both shapes —
-  // declared, not asserted, so tsc and eslint agree).
-  const counts: Record<string, number | string> = {
+  // rows per table as drizzle's count() reports them ({ value } with a
+  // real number — the string-count normalization now lives in the count()
+  // mapper/sqlCountTotal, not in the service).
+  const counts: Record<string, number> = {
     contract_sources: 3,
-    storage_layouts: '2',
+    storage_layouts: 2,
   };
   return {
     counts,
@@ -45,7 +44,7 @@ vi.mock('@/database/drizzle', () => ({
           state.conditions.push(condition);
           return {
             then: (resolve: unknown, reject: unknown) =>
-              Promise.resolve([{ count: state.counts[name] ?? 0 }]).then(
+              Promise.resolve([{ value: state.counts[name] ?? 0 }]).then(
                 resolve as never,
                 reject as never,
               ),
@@ -91,7 +90,7 @@ function predicateParts(condition: unknown): { column: unknown; value: unknown }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.counts = { contract_sources: 3, storage_layouts: '2' };
+  state.counts = { contract_sources: 3, storage_layouts: 2 };
   state.ops.length = 0;
   state.conditions.length = 0;
   state.deleteError = null;
@@ -120,7 +119,7 @@ describe('clearChainCachedData', () => {
     }
   });
 
-  it('reports the counted rows verbatim, normalizing string counts to numbers', async () => {
+  it('reports the counted rows verbatim', async () => {
     const cleared = await chainCacheService.clearChainCachedData(CHAIN);
 
     expect(cleared).toEqual({ contractSources: 3, storageLayouts: 2 });

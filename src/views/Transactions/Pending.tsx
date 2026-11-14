@@ -41,7 +41,7 @@ import { noticeBarStyle } from '@/components/ui/noticeBar';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { usePendingTransactions, type PoolEntry } from '@/services/txpool';
-import { formatGwei } from '@/services/gasHistory';
+import { formatGwei, weiToGwei } from '@/services/gasHistory';
 import {
   analyzeMempool,
   type AnalyzedPoolEntry,
@@ -52,8 +52,6 @@ import { cellText, formatHash, formatNativeDisplay, formatNumber } from '@/utils
 import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { chainRedirect } from '@/views/chainNav';
-
-const GWEI = 1_000_000_000;
 
 // Search params: ?group=1 switches the listing to conflict-grouped
 // rendering (winner first), so a grouped view is a shareable URL. The
@@ -156,6 +154,12 @@ const groupHeaderRow = css`
 export const formatPoolValue = (wei: bigint, decimals: number, symbol: string): string =>
   formatNativeDisplay(wei, decimals, { symbol });
 
+// wei → display gwei: gasHistory's exact wei→double conversion under its
+// display digit policy (2 decimals above 1 gwei, 4 below, trailing
+// zeros cut). The shared core of the cell label below and the analysis
+// strip's cap/tip readouts.
+const formatGweiWei = (wei: bigint): string => formatGwei(weiToGwei(wei));
+
 /**
  * Gas price cell: EIP-1559 entries show their fee cap ("≤" — the actual
  * base+tip paid is only known at inclusion), legacy entries their flat
@@ -163,13 +167,10 @@ export const formatPoolValue = (wei: bigint, decimals: number, symbol: string): 
  * zero.
  */
 export const gasPriceCellLabel = (entry: PoolEntry): string => {
-  const asGwei = (wei: bigint) => `${formatGwei(Number(wei) / GWEI)} gwei`;
-  if (entry.maxFeePerGas !== undefined) return `≤ ${asGwei(entry.maxFeePerGas)}`;
-  if (entry.gasPrice !== undefined) return asGwei(entry.gasPrice);
+  if (entry.maxFeePerGas !== undefined) return `≤ ${formatGweiWei(entry.maxFeePerGas)} gwei`;
+  if (entry.gasPrice !== undefined) return `${formatGweiWei(entry.gasPrice)} gwei`;
   return '—';
 };
-
-const formatGweiWei = (wei: bigint): string => formatGwei(Number(wei) / GWEI);
 
 /**
  * The analysis strip's summary line. Numbers derive from the entries the

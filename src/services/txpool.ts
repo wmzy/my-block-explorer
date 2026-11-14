@@ -25,6 +25,10 @@
 // - txpool payloads carry no timestamps; nothing here invents one.
 import { rpcRequest } from '@/utils/callTraceRpc';
 import { withTimeout } from '@/utils/withTimeout';
+// Canonical record-shape guard (rejects arrays) and the record-shape
+// cause-chain walk (message + code per hop, traceFormat's one copy).
+import { isRecord } from '@/utils/isRecord';
+import { errorChainText } from '@/utils/traceFormat';
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
 import { createPolledQueryHook, type PolledQueryResult } from './polledQuery';
 
@@ -84,12 +88,6 @@ export type PoolSnapshot = {
 
 // --- pure helpers ---
 
-/** Record<string, unknown> or null — arrays are not tx maps. */
-const asRecord = (raw: unknown): Record<string, unknown> | null =>
-  typeof raw === 'object' && raw !== null && !Array.isArray(raw)
-    ? (raw as Record<string, unknown>)
-    : null;
-
 /** Non-empty string → itself, anything else → null (honest absence). */
 const nonEmptyString = (raw: unknown): string | null =>
   typeof raw === 'string' && raw !== '' ? raw : null;
@@ -137,8 +135,8 @@ const normalizeEntry = (
   account: string,
   accountNonce: number | null,
 ): PoolEntry | null => {
-  const tx = asRecord(raw);
-  if (!tx || accountNonce === null) return null;
+  if (!isRecord(raw) || accountNonce === null) return null;
+  const tx = raw;
   const hash = nonEmptyString(tx.hash);
   const from = nonEmptyString(tx.from);
   if (!hash || !from) return null;
@@ -178,16 +176,15 @@ const normalizeEntry = (
  * an unchanged pool cannot reshuffle the listing.
  */
 export function buildPoolSnapshot(raw: unknown): PoolSnapshot {
-  const root = asRecord(raw);
+  const root = isRecord(raw) ? raw : null;
   const pendingEntries: PoolEntry[] = [];
   let queuedCount = 0;
 
-  const pendingMap = asRecord(root?.pending);
-  if (pendingMap) {
+  const pendingMap = root !== null && isRecord(root.pending) ? root.pending : null;
+  if (pendingMap !== null) {
     for (const [account, byNonce] of Object.entries(pendingMap)) {
-      const inner = asRecord(byNonce);
-      if (!inner) continue;
-      for (const [nonceKey, txRaw] of Object.entries(inner)) {
+      if (!isRecord(byNonce)) continue;
+      for (const [nonceKey, txRaw] of Object.entries(byNonce)) {
         const entry = normalizeEntry(txRaw, account, parseNonceKey(nonceKey));
         if (entry) pendingEntries.push(entry);
       }
@@ -196,14 +193,12 @@ export function buildPoolSnapshot(raw: unknown): PoolSnapshot {
 
   // The queued side is only counted (the view lists pending); entries pass
   // the same identity rule so garbage cannot inflate the count.
-  const queuedMap = asRecord(root?.queued);
-  if (queuedMap) {
+  const queuedMap = root !== null && isRecord(root.queued) ? root.queued : null;
+  if (queuedMap !== null) {
     for (const byNonce of Object.values(queuedMap)) {
-      const inner = asRecord(byNonce);
-      if (!inner) continue;
-      for (const txRaw of Object.values(inner)) {
-        const tx = asRecord(txRaw);
-        if (tx && nonEmptyString(tx.hash) && nonEmptyString(tx.from)) {
+      if (!isRecord(byNonce)) continue;
+      for (const txRaw of Object.values(byNonce)) {
+        if (isRecord(txRaw) && nonEmptyString(txRaw.hash) && nonEmptyString(txRaw.from)) {
           queuedCount += 1;
         }
       }
@@ -232,22 +227,6 @@ export function buildPoolSnapshot(raw: unknown): PoolSnapshot {
 // The info-state message the view shows verbatim for unsupported nodes.
 const TXPOOL_UNSUPPORTED_MESSAGE =
   'This RPC does not expose the transaction pool (txpool_* is not supported)';
-
-// Collects the error's whole cause chain plus JSON-RPC codes: viem wraps
-// provider errors several layers deep, and proxies re-encode them, so
-// "method not found" can live in any hop (or only as code -32601). Same
-// walk as utils/traceFormat.
-const errorChainText = (error: unknown): string => {
-  const parts: string[] = [];
-  let current: unknown = error;
-  for (let hop = 0; hop < 8 && typeof current === 'object' && current !== null; hop += 1) {
-    const record = current as Record<string, unknown>;
-    if (typeof record.message === 'string') parts.push(record.message);
-    if (record.code !== undefined) parts.push(String(record.code));
-    current = record.cause;
-  }
-  return parts.join('\n');
-};
 
 // "Method not found" and its provider phrasings. Bare "not found" is
 // deliberately excluded — a missing something-else is a different
@@ -300,7 +279,7 @@ export async function fetchPendingTransactions(chainId: number): Promise<TxPoolR
     // A 200 whose body is not a txpool object is a failure, not an empty
     // pool: Geth omits maps when a side is empty but always answers with
     // an object.
-    if (!asRecord(raw)) {
+    if (!isRecord(raw)) {
       return {
         status: 'failed',
         chainId,

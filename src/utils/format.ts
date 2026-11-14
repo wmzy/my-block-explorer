@@ -1,5 +1,5 @@
 // Formatting utilities
-import { formatUnits } from 'viem';
+import { formatGwei, formatUnits } from 'viem';
 
 /**
  * Exact fixed-decimal rendering of a scaled integer amount.
@@ -43,15 +43,17 @@ export function formatFixedDecimals(
   return `${negative ? '-' : ''}${whole}${fractionDigits > 0 ? `.${fractionText}` : ''}`;
 }
 
-// Shared native-token value display for the tx surfaces (Home feed, tx
-// list, tx detail, internal transfers): one display contract instead of
-// per-view copies. Zero renders exactly; dust below the 0.0001-unit
-// display floor renders the "<0.0001" floor instead of a misleading
-// "0.0000"; anything larger renders 4 decimals over the chain's OWN
-// native-currency decimals (`decimals`, default 18 — the shape every
-// pre-existing 2-arg caller means, byte-identical to the old hard-coded
-// path). An invalid `decimals` (formatFixedDecimals' guard) falls back
-// to the raw wei integer, never a fabricated amount.
+// The numeric core of formatValue (below) and of the unit-toggle rows
+// (util/units.ts formatValueByUnit's native branch) — one display
+// contract instead of a line-by-line re-implementation. Zero renders
+// exactly; dust below the 0.0001-unit display floor renders the
+// "<0.0001" floor instead of a misleading "0.0000"; anything larger
+// renders 4 decimals over the chain's OWN native-currency decimals.
+// An invalid `decimals` (formatFixedDecimals' guard) falls back to the
+// raw wei integer, never a fabricated amount. Returns the AMOUNT only —
+// each caller appends its own unit suffix/shape. (Not named
+// formatNativeAmount: views/Address/balanceHistory already exports a
+// trim-style formatter under that exact name.)
 //
 // Deliberately NOT a thin wrapper over formatNativeDisplay(wei, decimals,
 // {fraction: 'round4'}): the two agree on every non-negative input at
@@ -62,17 +64,25 @@ export function formatFixedDecimals(
 // formatNativeDisplay's own floor guard throw (10n ** BigInt(...)) where
 // this degrades to the raw wei. That divergence is why the floor
 // comparison lives here instead of being shared.
-export function formatValue(wei: bigint, symbol: string, decimals = 18): string {
-  if (wei === 0n) return `0 ${symbol}`;
+export function formatValueAmount(wei: bigint, decimals: number): string {
+  if (wei === 0n) return '0';
   const shown = formatFixedDecimals(wei, decimals, 4);
-  if (shown === null) return `${wei} ${symbol}`;
+  if (shown === null) return wei.toString();
   // 0.0001 native units in integer wei — the display floor, compared
   // exactly (the historical 18-decimal gate was `wei < 10n ** 14n`).
   // Flooring the WHOLE sub-floor band — including values half-up would
   // round to "0.0001" — is what the default path has always done.
   const floorUnit = 10n ** BigInt(Math.max(decimals - 4, 0));
-  if (wei < floorUnit) return `<0.0001 ${symbol}`;
-  return `${shown} ${symbol}`;
+  if (wei < floorUnit) return '<0.0001';
+  return shown;
+}
+
+// Shared native-token value display for the tx surfaces (Home feed, tx
+// list, tx detail, internal transfers): formatValueAmount above with the
+// symbol appended (`decimals`, default 18 — the shape every pre-existing
+// 2-arg caller means, byte-identical to the old hard-coded path).
+export function formatValue(wei: bigint, symbol: string, decimals = 18): string {
+  return `${formatValueAmount(wei, decimals)} ${symbol}`;
 }
 
 // Raw base-unit value → human amount: the shared shape of every token
@@ -99,6 +109,22 @@ export function formatRawUnits(
  */
 export function formatGasPrice(value: bigint | string): string {
   return formatFixedDecimals(BigInt(value), 9, 2) ?? '0.00';
+}
+
+/**
+ * Format a wei gas price as a "N gwei" label — the suffix concatenation
+ * every bigint-wei gas readout hand-rolled. viem's exact formatGwei (full
+ * 9-decimal expansion, trailing zeros cut), so no digit passes through a
+ * double.
+ *
+ * This is the exact-wei label for bigint inputs only: the gas
+ * panel/charts/mempool surfaces consume display-gwei NUMBERS from
+ * services/gasHistory (its own rounded digit policy) and keep their
+ * `${formatGwei(x)} gwei` concat — the two digit policies are
+ * deliberately not unified behind one signature.
+ */
+export function formatGweiLabel(wei: bigint): string {
+  return `${formatGwei(wei)} gwei`;
 }
 
 /**
@@ -156,6 +182,20 @@ export function cellText(value: string | null | undefined, fallback = 'N/A'): st
 }
 
 /**
+ * Token-id shortening for the NFT surfaces (held-id lists, tile ids):
+ * 8+8 around an ellipsis, ids of up to 16 characters kept whole.
+ *
+ * A deliberately LOWER pass-through threshold than truncateMiddle's
+ * lead+tail+3 (19 for this budget): token ids are mostly short sequence
+ * numbers, so 16 characters is already the widest a cell shows — the cut
+ * pays for itself from 17 on, where truncateMiddle would hand 17–19-char
+ * ids through unchanged.
+ */
+export function shortTokenId(id: string): string {
+  return id.length > 16 ? `${id.slice(0, 8)}...${id.slice(-8)}` : id;
+}
+
+/**
  * Format an address - show the first and last few characters. The head
  * slice includes the `0x` prefix (`length` counts hex body characters).
  */
@@ -181,8 +221,13 @@ const groupDigits = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!
  * Format a number - add thousands separators
  */
 export function formatNumber(value: number | string | bigint): string {
-  const num = typeof value === 'bigint' ? Number(value) : Number(value);
-  return new Intl.NumberFormat('en-US').format(num);
+  // bigint goes through the exact string grouping: `Number(value)` is
+  // precisely the precision failure mode formatBigInt exists to fix
+  // (integers ≥ 2^53 lose their trailing digits to the double).
+  // number/string keep the Intl path — locale-pinned, and the only
+  // branches that can see NaN or Infinity.
+  if (typeof value === 'bigint') return formatBigInt(value);
+  return new Intl.NumberFormat('en-US').format(Number(value));
 }
 
 /**

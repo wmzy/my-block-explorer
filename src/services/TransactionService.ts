@@ -436,11 +436,11 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           .offset(offset);
 
         const countResult = await db
-          .select({ count: sql<number>`count(*)` })
+          .select({ value: count() })
           .from(transactions)
           .where(and(eq(transactions.chainId, chainId), eq(transactions.blockNumber, blockNumber)));
 
-        const total = Number(countResult[0]?.count ?? 0);
+        const total = sqlCountTotal(countResult);
 
         if (txResults.length === 0 && offset === 0) {
           await indexBlockTransactions(chainId, blockNumber);
@@ -461,13 +461,13 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           // by `limit` and hid every later transaction of a busy block
           // from pagination).
           const indexedCount = await db
-            .select({ count: sql<number>`count(*)` })
+            .select({ value: count() })
             .from(transactions)
             .where(and(eq(transactions.chainId, chainId), eq(transactions.blockNumber, blockNumber)));
 
           return {
             transactions: newTransactions.map(tx => formatTransaction(tx)),
-            total: Number(indexedCount[0]?.count ?? 0),
+            total: sqlCountTotal(indexedCount),
           };
         }
 
@@ -507,7 +507,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           .offset(offset);
 
         const countResult = await db
-          .select({ count: sql<number>`count(*)` })
+          .select({ value: count() })
           .from(transactions)
           .where(
             and(
@@ -516,10 +516,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
             ),
           );
 
-        // DuckDB count(*) arrives as a string through the adapter; normalize
-        // so the declared numeric total is real (same rule as the event and
-        // scan services).
-        const total = Number(countResult[0]?.count ?? 0);
+        const total = sqlCountTotal(countResult);
 
         return {
           transactions: txResults.map(tx => formatTransaction(tx)),
@@ -578,7 +575,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
     }> => {
       try {
         const countResult = await db
-          .select({ count: sql<number>`count(*)` })
+          .select({ value: count() })
           .from(transactions)
           .where(eq(transactions.chainId, chainId));
 
@@ -598,11 +595,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           .orderBy(sql`${transactions.timestamp} DESC`)
           .limit(1000);
 
-        // Raw `sql<number>`count(*)`` comes back as a string from the adapter
-        // (drizzle's own count() helper does not). Without Number() the
-        // stats payload carried a string total, and /api/stats/overview's
-        // cross-chain `sum + ch.indexedTransactions` STRING-CONCATENATED it.
-        const totalTransactions = Number(countResult[0]?.count ?? 0);
+        const totalTransactions = sqlCountTotal(countResult);
 
         let avgGasPrice: string | null = null;
         const gasPrices = statsResult

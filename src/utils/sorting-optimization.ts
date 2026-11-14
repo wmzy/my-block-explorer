@@ -3,6 +3,8 @@
  * Provides efficient sorting algorithms and optimization strategies
  */
 
+import { chunk } from './chunk';
+
 export type SortConfig = {
   key: string;
   direction: 'asc' | 'desc';
@@ -185,15 +187,10 @@ export class OptimizedSorter {
    */
   private chunkedSort<T>(data: T[], sortConfigs: SortConfig[]): T[] {
     const chunkSize = 5000; // Process 5000 items at a time
-    const chunks: T[][] = [];
-
-    // Split data into chunks
-    for (let i = 0; i < data.length; i += chunkSize) {
-      chunks.push(data.slice(i, i + chunkSize));
-    }
+    const chunks = chunk(data, chunkSize);
 
     // Sort each chunk individually
-    const sortedChunks = chunks.map(chunk => this.standardSort(chunk, sortConfigs));
+    const sortedChunks = chunks.map(part => this.standardSort(part, sortConfigs));
 
     // Merge sorted chunks
     return this.mergeSortedChunks(sortedChunks, sortConfigs);

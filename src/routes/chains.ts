@@ -21,7 +21,7 @@ import { redactUrl, requestSeesFullUrl } from '../middleware/rpc-url-visibility'
 import { readJsonBody, respondError } from '../utils/api-error';
 import { errorMessage } from '../utils/errorHandler';
 import { getValidatedChainId } from '../server/validation';
-import { parseStrictInteger } from '../utils/validation';
+import { parseHttpUrl, parseStrictInteger } from '../utils/validation';
 import { parseHexQuantity } from '../utils/strictInteger';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { chainCacheService } from '../services/ChainCacheService';
@@ -155,15 +155,16 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
     return respondError(c, 400, 'invalid_url', 'rpcUrl is required and must be a string');
   }
 
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(rpcUrl);
-  } catch {
-    return respondError(c, 400, 'invalid_url', 'rpcUrl must be a valid absolute URL');
-  }
-
-  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    return respondError(c, 400, 'invalid_url', 'rpcUrl must use the http or https protocol');
+  const parsedUrl = parseHttpUrl(rpcUrl);
+  if (!parsedUrl.ok) {
+    return respondError(
+      c,
+      400,
+      'invalid_url',
+      parsedUrl.reason === 'protocol'
+        ? 'rpcUrl must use the http or https protocol'
+        : 'rpcUrl must be a valid absolute URL',
+    );
   }
 
   if (

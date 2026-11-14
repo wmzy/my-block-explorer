@@ -1,5 +1,6 @@
-import { eq, and, or, sql, gte, lte, lt, isNull, desc, ne, type SQL } from 'drizzle-orm';
+import { eq, and, or, sql, gte, lte, lt, isNull, desc, ne, count, type SQL } from 'drizzle-orm';
 import { db } from '../database/drizzle';
+import { sqlCountTotal } from '../database/init';
 import {
   indexingProgress,
   contractEvents,
@@ -511,7 +512,7 @@ const countRangeEvents = async (
   toBlock: bigint,
 ): Promise<number> => {
   const rows = await db
-    .select({ count: sql<number>`count(*)` })
+    .select({ value: count() })
     .from(contractEvents)
     .where(
       and(
@@ -521,7 +522,7 @@ const countRangeEvents = async (
         lte(contractEvents.blockNumber, fromBlock <= toBlock ? toBlock : fromBlock),
       ),
     );
-  return Number(rows[0]?.count ?? 0);
+  return sqlCountTotal(rows);
 };
 
 type RangeSummary = {
@@ -616,17 +617,13 @@ export const getIndexingStatus = async (
       .where(and(eq(contractEvents.chainId, chainId), eq(contractEvents.contractAddress, address)))
       .groupBy(contractEvents.eventName),
     db
-      .select({ count: sql<number>`count(*)` })
+      .select({ value: count() })
       .from(contractEvents)
       .where(and(eq(contractEvents.chainId, chainId), eq(contractEvents.contractAddress, address))),
   ]);
 
   const eventTypes = eventTypeRows.map(r => r.eventName).filter((n): n is string => !!n);
-  // The adapter surfaces DuckDB count(*) as a string (see the same note in
-  // getContractEvents); without Number() the status payload carried a string
-  // count and downstream numeric comparisons (EventStatistics' growth check)
-  // silently misbehaved.
-  const actualTotalEvents = Number(countResult[0]?.count ?? 0);
+  const actualTotalEvents = sqlCountTotal(countResult);
 
   // Query indexingRanges for range-based aggregation
   const rangeRows = await db
@@ -875,14 +872,12 @@ export const getContractEvents = async (
       .limit(pageSize)
       .offset(offset),
     db
-      .select({ count: sql<number>`count(*)` })
+      .select({ value: count() })
       .from(contractEvents)
       .where(and(...conditions)),
   ]);
 
-  // The adapter surfaces DuckDB count(*) as a string; normalize so callers
-  // get a real number (string totals break numeric comparisons downstream).
-  const total = Number(countResult[0]?.count ?? 0);
+  const total = sqlCountTotal(countResult);
 
   return {
     events,
@@ -896,7 +891,7 @@ export const getContractEvents = async (
 export const getEventStatistics = async (chainId: number, address: `0x${string}`) => {
   const [countResult, typeResult] = await Promise.all([
     db
-      .select({ count: sql<number>`count(*)` })
+      .select({ value: count() })
       .from(contractEvents)
       .where(and(eq(contractEvents.chainId, chainId), eq(contractEvents.contractAddress, address))),
     db
@@ -909,9 +904,9 @@ export const getEventStatistics = async (chainId: number, address: `0x${string}`
       .groupBy(contractEvents.eventName),
   ]);
 
-  // DuckDB count(*) arrives as a string through the adapter — normalize so
-  // the statistics payload keeps its documented int() contract and callers
-  // can do arithmetic on it (same normalization as getContractEvents).
+  // The grouped per-row counts are raw count(*), surfaced by the adapter as
+  // strings — normalize so the statistics payload keeps its documented
+  // int() contract (the total unwraps through sqlCountTotal already).
   const eventsByType: Record<string, number> = {};
   for (const row of typeResult) {
     if (row.eventName) {
@@ -920,7 +915,7 @@ export const getEventStatistics = async (chainId: number, address: `0x${string}`
   }
 
   return {
-    totalEvents: Number(countResult[0]?.count ?? 0),
+    totalEvents: sqlCountTotal(countResult),
     eventsByType,
     uniqueEventTypes: typeResult.length,
   };

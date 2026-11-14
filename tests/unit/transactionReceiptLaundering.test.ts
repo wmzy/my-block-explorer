@@ -315,7 +315,7 @@ describe('block indexing — one unreadable receipt never writes a half-row', ()
             // old code returned the page length instead of re-reading.
             const preIndex = countsServed === 0;
             countsServed += 1;
-            return chainable(preIndex ? [{ count: 0 }] : [{ count: 3 }]);
+            return chainable(preIndex ? [{ value: 0 }] : [{ value: 3 }]);
           }
           // The first ROW query is the cold one: nothing indexed yet, so
           // the service walks the block; the rows it re-reads afterwards

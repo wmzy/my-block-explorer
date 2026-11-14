@@ -39,7 +39,15 @@ import * as ff from 'fetch-fun';
 import { ApiError } from '@/util/apiError';
 import { DEFAULT_STALE_TIME } from '@/util/loaderCache';
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
-import { api, del, get, post, withSignal, type ApiClient } from '@/util/http';
+import {
+  api,
+  del,
+  get,
+  parseHttpErrorBody,
+  post,
+  withSignal,
+  type ApiClient,
+} from '@/util/http';
 import { useConditionalPolling } from './polledQuery';
 
 export const SCAN_JOB_STATUSES = ['pending', 'running', 'paused', 'error', 'complete'] as const;
@@ -137,27 +145,23 @@ export function scanJobFromTxPayload(payload: unknown): ScanJob | null {
   return parseScanJob((payload as Record<string, unknown>).deepScan);
 }
 
-// Error mapping for the scan endpoints: identical to the base chain in
-// util/http (message/code/details extraction, timeout → 408, network →
-// status 0) with ONE extension — the pinned scan 400s discriminate via
-// the body's `error` field ('scan_conflict', 'invalid_bounds'), which
-// the base mapper drops when a `message` also rides the body. Here that
-// discriminator additionally surfaces as ApiError.code so the panel can
-// branch on scan_conflict verbatim instead of sniffing message copy.
-// Piping mapError REPLACES the base mapper (fetch-fun semantics), so this
-// replicates the base branches it replaces.
+// Error mapping for the scan endpoints: the shared parseHttpErrorBody
+// extraction from util/http with ONE extension — the pinned scan 400s
+// discriminate via the body's `error` field ('scan_conflict',
+// 'invalid_bounds'), which the base mapper drops when a `message` also
+// rides the body. Here that discriminator additionally surfaces as
+// ApiError.code (body.code wins when present, else the error text) so the
+// panel can branch on scan_conflict verbatim instead of sniffing message
+// copy. Piping mapError REPLACES the base mapper (fetch-fun semantics),
+// so this replicates the base branches it replaces.
 const scanApi: ApiClient = api.pipe(ff.mapError, (e: unknown): unknown => {
   if (e instanceof ff.HTTPError) {
-    const body: Record<string, unknown> =
-      typeof e.data === 'object' && e.data !== null ? (e.data as Record<string, unknown>) : {};
-    const message = typeof body.message === 'string' ? body.message : undefined;
-    const errorText = typeof body.error === 'string' ? body.error : undefined;
-    const code = typeof body.code === 'string' ? body.code : errorText;
+    const { message, errorText, code, details } = parseHttpErrorBody(e);
     return new ApiError(
       message ?? errorText ?? `HTTP ${e.status}`,
       e.status,
-      code,
-      'details' in body ? body.details : undefined,
+      code ?? errorText,
+      details,
     );
   }
   if (e instanceof ff.TimeoutError) return new ApiError('Request timeout', 408);

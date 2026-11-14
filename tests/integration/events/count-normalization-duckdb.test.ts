@@ -4,12 +4,12 @@
  * arithmetic on them (e.g. EventStatistics compares totalEventsIndexed to
  * the previous poll to decide whether to refresh the events list).
  *
- * DuckDB surfaces `count(*)` through the custom adapter as a string/bigint,
- * which is why every sibling read normalizes with `Number()` (getContractEvents
- * carries an explicit note; countRangeEvents, EventExportService,
- * AddressScanService, ChainCacheService all normalize too). This test drives
- * the REAL adapter against an in-memory DuckDB so the driver's actual type
- * is what the assertions see — a mocked db could not catch this class.
+ * DuckDB surfaces raw `count(*)` through the custom adapter as a
+ * string/bigint; the services now select through drizzle's count() helper
+ * and unwrap with sqlCountTotal, which is where that normalization lives.
+ * This test drives the REAL adapter against an in-memory DuckDB so the
+ * driver's actual type is what the assertions see — a mocked db could not
+ * catch this class.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -25,7 +25,11 @@ vi.mock('@/database/drizzle', async () => {
   return { db, ...schema };
 });
 
-vi.mock('@/database/init', async () => await import('@/database/drizzle'));
+vi.mock('@/database/init', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/database/init')>();
+  const mocked = await import('@/database/drizzle');
+  return { ...actual, ...mocked };
+});
 
 // getIndexingStatus touches the chain head; stub the gateway so the test
 // never dials a real RPC (and stays deterministic offline).
@@ -89,5 +93,45 @@ describe('event statistics counts are numbers (real DuckDB driver)', () => {
 
     expect(status.totalEventsIndexed).toBe(2);
     expect(typeof status.totalEventsIndexed).toBe('number');
+  });
+});
+
+describe('transaction counts are numbers (real DuckDB driver)', () => {
+  // TransactionService feeds /api/stats/overview, whose cross-chain reduce
+  // string-concatenated when a count leaked as a string — the same wire
+  // contract as the events family above.
+  it('getTransactionStats returns a numeric totalTransactions', async () => {
+    const { createTransactionService } = await import('@/services/TransactionService');
+    const { transactions, blocks } = await import('@/database/schema');
+    const service = createTransactionService({
+      db,
+      transactions,
+      blocks,
+      rpcManager: {} as never,
+    });
+
+    // transactions PK is (chain_id, block_number, transaction_index).
+    for (const [hash, transactionIndex] of [
+      ['0x1', 0],
+      ['0x2', 1],
+    ] as const) {
+      await db.insert(transactions).values({
+        chainId: CHAIN_ID,
+        hash: hash as `0x${string}`,
+        blockNumber: 1000n,
+        transactionIndex,
+        gasPrice: 1n,
+        gasUsed: 21000n,
+        status: 1,
+      });
+    }
+
+    const stats = await service.getTransactionStats(CHAIN_ID);
+
+    expect(stats.totalTransactions).toBe(2);
+    expect(typeof stats.totalTransactions).toBe('number');
+    expect(stats.totalTransactions + 1).toBe(3);
+
+    await db.delete(transactions).where(eq(transactions.chainId, CHAIN_ID));
   });
 });

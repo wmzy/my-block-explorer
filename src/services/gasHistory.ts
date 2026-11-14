@@ -23,6 +23,8 @@
 //   absent (undefined), never a guess dressed up as a number.
 import { createRpcClient } from '@/utils/realTimeData';
 import { formatNumber } from '@/utils/format';
+// The Error-cause chain flattener (errorHandler's one copy).
+import { flattenErrorMessage } from '@/utils/errorHandler';
 
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
 
@@ -340,18 +342,6 @@ export function buildGasHistory(
 
 // --- failure classification ---
 
-// Collects the error's whole cause chain: viem wraps JSON-RPC errors
-// (where "method not found" lives) several layers deep.
-const errorChainText = (error: unknown): string => {
-  const parts: string[] = [];
-  let current: unknown = error;
-  for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
-    parts.push(current.message);
-    current = (current as { cause?: unknown }).cause;
-  }
-  return parts.length > 0 ? parts.join(' ') : String(error);
-};
-
 const METHOD_UNSUPPORTED_PATTERN =
   /(method[^\n]*not[^\n]*(found|exist|available|support))|not[^\n]*supported|does not exist|unimplemented/i;
 
@@ -360,7 +350,7 @@ const METHOD_UNSUPPORTED_PATTERN =
  * Only the reason travels; raw provider text never reaches the UI.
  */
 export function classifyGasFailure(error: unknown): GasUnavailableReason {
-  const text = errorChainText(error);
+  const text = flattenErrorMessage(error);
   return METHOD_UNSUPPORTED_PATTERN.test(text) ? 'method-not-supported' : 'fetch-failed';
 }
 

@@ -24,7 +24,7 @@ utils/
 │                          #   castCommand/viemScript — utils never imports
 │                          #   from views/)
 ├── multicall.ts           # MULTICALL3_ADDRESS + readMulticallValue/Bigint/
-│                          #   Result outcome narrowers (pure, barrel-safe)
+│                          #   Result outcome narrowers (pure)
 ├── scanParams.ts          # refreshSchema (?refresh=1) + readStrictInt
 │                          #   (transfers/approvals shared query params)
 ├── dbTime.ts              # secondsToDate + toIsoTimestamp (naive-UTC-safe
@@ -48,8 +48,7 @@ utils/
 ├── sorting-optimization.ts# Large dataset sorting with caching
 ├── serialization.ts       # JSON serialization (BigInt via jsonReplacer)
 ├── validation.ts          # parsePaginationParams, parseChainAndAddressParams
-├── api-error.ts           # API error factory
-└── index.ts               # Barrel export
+└── api-error.ts           # API error factory
 ```
 
 ## WHERE TO LOOK
@@ -92,25 +91,26 @@ copies; `DEFAULT_MAX_SCAN_CALLS` counts ACTUAL getLogs dispatched).
 export const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promise<T>
 ```
 
-## BARREL
+## IMPORTS (no barrel)
 
-`index.ts` re-exports the util modules whose import graphs stay leaf/pure
-(2 cross-module name collisions are resolved with explicit re-exports that
-take precedence over ambiguous star exports: `isValidAddress`/
-`sanitizeInput` → `validation`). Modules whose graph reaches the browser
-RPC layer (`realTimeData`, `rpcConfigService`, `contractInteraction`,
- `callTraceRpc`) are deliberately NOT re-exported — deep-import only, or
-the browser fetch graph and unresolvable `@/` aliases leak into backend
-barrel consumers (incl. the vite.config esbuild bundle); `serialization.ts`
-similarly pulls the pino logger (browser code keeps deep imports there).
+The former `index.ts` barrel was deleted 2026-11-14 (zero product
+importers; only its own contract test consumed it). Deep imports
+(`@/utils/<module>`) are the ONLY way to consume utils — do not recreate
+a barrel or any other aggregation re-export here. Historical lesson: a
+star-export once dragged the browser-RPC graph (`realTimeData` →
+`@/util/http`, an alias the vite.config esbuild bundle cannot resolve)
+into backend consumers and broke `pnpm build` at config load.
+
+The old barrel's exclusion boundary survives as a convention: modules
+whose import graph reaches the browser RPC layer — `realTimeData`,
+`rpcConfigService`, `contractInteraction`, `callTraceRpc` — and
+`serialization.ts` (pino logger) must never be re-exported through any
+future aggregation point; browser code deep-imports serialization.
 `addressValidity.ts` and `paramParsing.ts` (both moved here from views/
-2026-11-11) are also deep-import-only. Deep imports remain canonical for
-call sites — the barrel is convenience surface.
+2026-11-11) are deep-import-only as well.
 
 ```typescript
-// Both work; deep imports are still the norm in call sites
-import { formatBigInt } from '@/utils';
-import { createRpcClient } from '@/utils/realTimeData'; // never the barrel
+import { formatBigInt } from '@/utils/format'; // the only import shape
 ```
 
 ## NOTES

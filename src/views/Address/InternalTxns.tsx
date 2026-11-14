@@ -12,8 +12,6 @@ import { css } from '@linaria/core';
 import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
-import { fetchCallTraceTree } from '@/utils/callTraceRpc';
-import { errorMessage } from '@/utils/errorHandler';
 import { cellText, formatHash, formatNumber, formatValue } from '@/utils/format';
 import {
   aggregateInternalTxns,
@@ -28,7 +26,6 @@ import {
   type InternalTxAggregate,
   type TraceTxOutcome,
 } from '@/utils/internalTxScan';
-import { isTraceUnsupportedError } from '@/utils/traceFormat';
 import { addressSearchSchema, effectiveInternalTxDepth } from '@/views/Address/search';
 import { fetchInternalTransactions, type InternalTxnsResult } from '@/services/addressScan';
 import { CallTypeBadge } from '@/components/CallTypeBadge';
@@ -45,6 +42,7 @@ import {
   muted,
   retryRow,
   summaryLine,
+  traceOneTxOutcome,
 } from '@/components/internalTxnsShared';
 
 // Trace-depth presets offered by the compact control: the scan default,
@@ -135,25 +133,17 @@ const recordsErrorLine = css`
 // symbol/decimals pair is derived at each call site below — the
 // formatter never guesses a chain.
 
-// Trace one transaction through the family's shared fetch
-// (utils/callTraceRpc — the Call Trace card's request shape and cast).
-const traceOneTx = async (
+// Trace one transaction through the shared skeleton
+// (components/internalTxnsShared: the family fetch, the honest
+// no-calls-recorded short-circuit, and the unsupported/failed catch
+// shaping — the block sweep runs the same shaping); this tab injects its
+// viewed-address flatten step.
+const traceOneTx = (
   chainId: number,
   viewedAddress: string,
   hash: string,
-): Promise<TraceTxOutcome> => {
-  try {
-    const root = await fetchCallTraceTree(chainId, hash);
-    if (root === null) return { hash, status: 'traced', rows: [], truncated: false };
-    const { rows, truncated } = flattenInternalTxTree(hash, root, viewedAddress);
-    return { hash, status: 'traced', rows, truncated };
-  } catch (err) {
-    const message = errorMessage(err);
-    return isTraceUnsupportedError(err)
-      ? { hash, status: 'unsupported', message }
-      : { hash, status: 'failed', message };
-  }
-};
+): Promise<TraceTxOutcome> =>
+  traceOneTxOutcome(chainId, hash, root => flattenInternalTxTree(hash, root, viewedAddress));
 
 export type InternalTxnsProps = {
   chainId: number;

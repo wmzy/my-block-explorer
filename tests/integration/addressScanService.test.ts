@@ -22,7 +22,14 @@ vi.mock('@/database/drizzle', async () => {
   });
   return { db, ...schema };
 });
-vi.mock('@/database/init', async () => await import('@/database/drizzle'));
+vi.mock('@/database/init', async importOriginal => {
+  // Pass the REAL exports (sqlCountTotal et al.) through: services import
+  // helpers from '@/database/init', and swapping the module wholesale for
+  // the drizzle schema strips them.
+  const actual = await importOriginal<typeof import('@/database/init')>();
+  const mocked = await import('@/database/drizzle');
+  return { ...actual, ...mocked };
+});
 vi.mock('@/services/ContractSourceService', () => ({ contractSourceService: {} }));
 
 const mocks = vi.hoisted(() => ({

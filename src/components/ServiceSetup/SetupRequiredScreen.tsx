@@ -1,11 +1,11 @@
 import { css, cx } from '@linaria/core';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Alert } from 'haze-ui';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { panelEnterBase } from '@/components/ui/motion';
-import { useCopyFeedback } from '@/util/useCopyFeedback';
+import { CopyButton, copyButtonBase } from '@/components/ui/CopyButton';
 
 type SetupRequiredScreenProps = {
   error: string | null;
@@ -211,44 +211,22 @@ const argPartStyle = css`
   color: var(--haze-color-success);
 `;
 
-const codeActionStyle = css`
-  position: absolute;
-  top: var(--haze-space-2);
-  right: var(--haze-space-2);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-
-  .codeBlockWrapperStyle:hover & {
-    opacity: 1;
-  }
-`;
-
-const copiedToastStyle = css`
-  position: absolute;
-  top: var(--haze-space-2);
-  right: var(--haze-space-2);
-  padding: var(--haze-space-1) var(--haze-space-2);
-  background: var(--haze-color-success);
-  color: var(--haze-color-text-inverse);
-  font-size: var(--haze-text-xs);
-  font-weight: var(--haze-weight-medium);
-  border-radius: var(--haze-radius-sm);
-  animation: toast-fade 1.5s ease forwards;
-
-  @keyframes toast-fade {
-    0% {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    70% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: translateY(-4px);
-    }
-  }
-`;
+// The step-1 copy control: the shared CopyButton (label-swap feedback —
+// 'Copied ✓' / 'Copy failed') with the standard bordered chrome, pinned
+// to the code block's top-right corner. Always visible: the former
+// hover-reveal selector spelled the wrapper's source-level name, which
+// linaria hashes, so it never matched and the old button sat at
+// opacity 0 with the 'Copied!' toast as the only feedback — the toast
+// duplicated exactly what the label swap now reports, so it is gone.
+const codeActionStyle = cx(
+  copyButtonBase,
+  css`
+    position: absolute;
+    top: var(--haze-space-2);
+    right: var(--haze-space-2);
+    font-size: var(--haze-text-xs);
+  `,
+);
 
 const tabContainerStyle = css`
   display: flex;
@@ -375,10 +353,6 @@ export function SetupRequiredScreen({
 }: SetupRequiredScreenProps) {
   const [packageManager, setPackageManager] = useState<PackageManager>('npx');
   const [url, setUrl] = useState('');
-  // Shared copy-feedback hook (silent on failure — the render reads 'ok'
-  // only, matching the previous boolean contract). resetMs normalizes to
-  // the app-wide 2000ms window.
-  const copyFeedback = useCopyFeedback();
 
   const currentCommand = PACKAGE_MANAGERS.find(p => p.key === packageManager)?.command ?? '';
 
@@ -409,13 +383,6 @@ export function SetupRequiredScreen({
     }, REPROBE_INTERVAL_MS);
     return () => clearInterval(timer);
   }, []);
-
-  const handleCopy = useCallback(() => {
-    // The shared hook covers insecure contexts (copyText's legacy
-    // fallback); a genuine failure stays silent (as before) because the
-    // render below reads the 'ok' state only.
-    void copyFeedback.copy(currentCommand);
-  }, [copyFeedback, currentCommand]);
 
   const handleConnect = async () => {
     const trimmedUrl = url.trim();
@@ -488,17 +455,11 @@ export function SetupRequiredScreen({
                       <span className={commandPartStyle}>{commandBase}</span>
                       <span className={argPartStyle}> --port {commandPort}</span>
                     </code>
-                    {copyFeedback.state === 'ok' && (
-                      <span className={copiedToastStyle}>Copied!</span>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                    <CopyButton
+                      text={currentCommand}
+                      label="Copy"
                       className={codeActionStyle}
-                      onClick={handleCopy}
-                    >
-                      Copy
-                    </Button>
+                    />
                   </div>
                 </div>
               </div>
