@@ -63,8 +63,13 @@ export function subscribeValueUnit(listener: () => void): () => void {
 }
 
 // 1 gwei in wei — a fixed EVM constant, independent of the chain's
-// native-currency decimals.
-const GWEI_IN_WEI = 10n ** 9n;
+// native-currency decimals. Exported with its Number-domain twin GWEI as
+// the single home for the factor (chartStats and gasHistory used to
+// carry their own private copies).
+export const GWEI_IN_WEI = 10n ** 9n;
+
+/** 1 gwei in wei as a plain number — the Number twin of GWEI_IN_WEI (wei / GWEI → gwei). */
+export const GWEI = 1_000_000_000;
 
 // en-US digit grouping for the integer readouts ("1,152,921,504").
 // Intl.NumberFormat formats BigInt exactly (no Number coercion — wei

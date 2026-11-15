@@ -13,16 +13,17 @@
 // is treated as "no ratio to report", never as 0.
 
 import { formatNumber, formatPercentage } from './format';
+import { parseDecimalBigInt } from './strictInteger';
 
-/** Parse a decimal-string gas quantity; null when absent or unparseable. */
-const parseGas = (value: string | undefined | null): bigint | null => {
-  if (value === undefined || value === null) return null;
-  try {
-    return BigInt(value);
-  } catch {
-    return null;
-  }
-};
+/**
+ * Parse a decimal-string gas quantity; null when absent or unparseable.
+ * Delegates to the canonical strict parser, which rejects the forms
+ * BigInt() would take (0x hex, signs, surrounding whitespace) — gas
+ * fields are plain decimal strings, so leniency here could only hide a
+ * malformed value behind a fabricated number.
+ */
+const parseGas = (value: string | undefined | null): bigint | null =>
+  value == null ? null : parseDecimalBigInt(value);
 
 /**
  * Percentage of the block's gas limit that was used, or null when the

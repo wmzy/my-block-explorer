@@ -5,28 +5,11 @@ import { approvalScanService } from '../services/ApprovalScanService';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
-import { parseStrictInteger } from '../utils/validation';
-import { refreshSchema } from '../utils/scanParams';
+import { refreshSchema, windowParam } from '../utils/scanParams';
 
 const logger = createLogger('approvals-routes');
 
 const app = new Hono();
-
-// Query params. The window keeps its documented degrade-to-default
-// policy (junk and out-of-range fall back to the service's tiered
-// default, which is echoed back) — a scan window is a discovery bound,
-// not a page. What changes is the PARSE: the old z.coerce.number() ran
-// Number(), which accepts a valid prefix and reinterprets the rest, so
-// '0x10' became 16 and '1e5' became 100000 — a junk window silently swept
-// a range the client never asked for. parseStrictInteger accepts plain
-// decimal digits only, so those now degrade like any other junk.
-const MAX_WINDOW_BLOCKS = 50_000_000;
-const readWindow = (raw: string | undefined): number | undefined => {
-  if (raw === undefined || raw === '') return undefined;
-  const parsed = parseStrictInteger(raw);
-  if (parsed === null || parsed < 1 || parsed > MAX_WINDOW_BLOCKS) return undefined;
-  return parsed;
-};
 
 // On-demand approvals discovery (owner-filtered approval-event
 // eth_getLogs sweep — ERC-20/ERC-721 Approval + ERC-1155
@@ -46,7 +29,7 @@ app.get('/chains/:chainId/addresses/:address/approvals', approvalsRateLimiter, a
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
-  const windowBlocks = readWindow(c.req.query('window'));
+  const windowBlocks = windowParam(c.req.query('window'));
   const refresh = refreshSchema.parse(c.req.query('refresh')) === '1';
 
   try {

@@ -25,6 +25,7 @@ import {
   type SqlCellValue,
   type SqlQueryResult,
 } from '@/services/sqlConsole';
+import { adminGateFromError, rateLimitWaitSeconds } from '@/util/adminGate';
 import { ApiError } from '@/util/apiError';
 import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 import { SQL_CONSOLE_STORAGE_KEY } from '@/util/storageKeys';
@@ -69,7 +70,7 @@ function persistSqlHistory(history: string[]): void {
   writeStorageItem(SQL_CONSOLE_STORAGE_KEY, JSON.stringify(history));
 }
 
-// --- Error classification (exported for the view tests) ---
+// --- Error classification (shared leaf: util/adminGate.ts) ---
 
 // The STRICT admin gate's two distinct 403 faces: 'unconfigured' = the
 // server has no ADMIN_TOKEN at all (fail-closed by design — the backend
@@ -78,20 +79,6 @@ function persistSqlHistory(history: string[]): void {
 // differs (restart with a token vs. store the token here), so the
 // distinction must survive to the UI.
 export type SqlAdminGate = 'unconfigured' | 'unauthorized';
-
-export function sqlAdminGateFromError(error: unknown): SqlAdminGate | null {
-  if (!(error instanceof ApiError) || error.status !== 403) return null;
-  return /Set ADMIN_TOKEN on the server/i.test(error.message) ? 'unconfigured' : 'unauthorized';
-}
-
-// The backend's 429 body message carries the wait ("…retry after 3s.");
-// toApiError keeps the message but not the structured field, so the
-// seconds are parsed back out of our own limiter's fixed format.
-export function rateLimitWaitSeconds(error: unknown): number | null {
-  if (!(error instanceof ApiError) || error.status !== 429) return null;
-  const match = /retry after (\d+)s/i.exec(error.message);
-  return match ? Number(match[1]) : null;
-}
 
 // One cell as display text: NULL reads as SQL NULL (not the empty string —
 // '' is a real value a query can return), nested lists/structs render as
@@ -401,7 +388,7 @@ export default function SqlConsole() {
 
   // Whichever endpoint reported the gate first speaks for the whole page:
   // the browser token and the server configuration are page-global facts.
-  const gate = sqlAdminGateFromError(runError) ?? sqlAdminGateFromError(tables.error);
+  const gate = adminGateFromError(runError) ?? adminGateFromError(tables.error);
 
   const runQuery = async () => {
     const query = queryText.trim();

@@ -761,7 +761,7 @@ const performanceMetricLabel = css`
   color: var(--haze-color-text);
 `;
 
-// data-highlight marks the "good" metric values (fast sort, cache hit).
+// data-highlight marks the "good" metric values (e.g. a fast sort).
 const performanceMetricValue = css`
   color: var(--haze-color-text);
   font-weight: normal;
@@ -825,22 +825,19 @@ const formatValue = (value?: string): string => {
   }
 };
 
-// Import optimized sorting and search utilities
-import {
-  optimizedSort,
-  type SortConfig,
-  type SortingPerformanceMetrics,
-} from '../../utils/sorting-optimization';
+// Stable multi-key sort (utils/sorting-optimization) behind the table's
+// client-side sorting.
+import { multiKeySort, type SortConfig, type SortMetrics } from '../../utils/sorting-optimization';
 
 const clientSideSort = (
   data: EventData[],
   sortConfigs: SortConfig[],
   primarySort: SortState,
-): { sortedData: EventData[]; metrics: SortingPerformanceMetrics } => {
-  // The sorter itself handles the no-config case (returns a copy labeled
-  // 'no-sort'), so there is no separate early return here.
+): { sortedData: EventData[]; metrics: SortMetrics } => {
+  // The sorter itself handles the no-config case (returns an unchanged
+  // copy), so there is no separate early return here.
 
-  // Prepare sort configurations for optimized sorter
+  // Prepare sort configurations
   let finalSortConfigs: SortConfig[] = [];
 
   if (sortConfigs.length > 0) {
@@ -862,31 +859,13 @@ const clientSideSort = (
     ];
   }
 
-  // Generate cache key based on sort configurations AND the data itself.
-  // Size+configs alone would make the module-global sorter cache return a
-  // stale ordering for a refetched page whose row count and sort did not
-  // change — e.g. a refreshKey bump that swapped in new events would keep
-  // rendering the previous page's rows. Row identity plus the fields that
-  // legitimately mutate on refetch (timestamp backfill, finality
-  // promotion) keys the cache to the actual content.
-  const cacheKey = `sort_${JSON.stringify({
-    dataSize: data.length,
-    configs: finalSortConfigs.map(c => ({ k: c.key, d: c.direction, t: c.type })),
-    rows: data.map(
-      row =>
-        `${row.transactionHash}-${row.logIndex ?? ''}-${row.blockNumber}-${
-          row.blockTimestamp ?? ''
-        }-${row.isFinalized ?? ''}`,
-    ),
-  })}`;
-
-  // Use optimized sorting; the returned metrics describe THIS sort (real
-  // algorithm used, honest cache hit) and feed the perf panel directly.
-  return optimizedSort(data, finalSortConfigs, {
-    useCache: true,
-    cacheKey,
-    threshold: 1000, // Use optimized sorting for datasets over 1000 items
-  });
+  // Plain stable sort per call — no result cache: the module's old TTL
+  // cache needed a key built by serializing every row (O(n) string work)
+  // just to skip the O(n log n) sort it was warming for, and a stale hit
+  // risked rendering a previous page's rows after a refetch. The returned
+  // metrics describe THIS sort and feed the perf panel directly.
+  const { rows, metrics } = multiKeySort(data, finalSortConfigs);
+  return { sortedData: rows, metrics };
 };
 
 // The events route caps pageSize at 1000 (routes/events.ts), and the
@@ -1261,12 +1240,7 @@ export const EventTable: React.FC<EventTableProps> = ({
   // Performance monitoring state — per-sort facts straight from the sorter's
   // metrics (no global history: the deleted SortingPerformanceMonitor kept a
   // process-lifetime buffer whose averages mixed pages and sessions).
-  const [sortingMetrics, setSortingMetrics] = useState<{
-    sortTime: number;
-    dataSize: number;
-    algorithm: string;
-    cacheHit: boolean;
-  } | null>(null);
+  const [sortingMetrics, setSortingMetrics] = useState<SortMetrics | null>(null);
   const [showPerformanceInfo, setShowPerformanceInfo] = useState(false);
 
   // Enhanced filtering state
@@ -1745,14 +1719,9 @@ export const EventTable: React.FC<EventTableProps> = ({
       );
 
       setEvents(paginatedData);
-      setSortingMetrics({
-        // The sorter's own timing of this sort, plus its honest algorithm
-        // label and cache-hit flag — never a wall-clock guess.
-        sortTime: sortResult.metrics.executionTime,
-        dataSize: sortResult.sortedData.length,
-        algorithm: sortResult.metrics.algorithmUsed,
-        cacheHit: sortResult.metrics.cacheHit,
-      });
+      // The sorter's own facts for THIS sort (row count, keys applied,
+      // duration) — never a wall-clock guess.
+      setSortingMetrics(sortResult.metrics);
     } else {
       setEvents(allEvents);
       setSortingMetrics(null);
@@ -1930,7 +1899,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                   aria-pressed={showPerformanceInfo}
                   onClick={() => setShowPerformanceInfo(!showPerformanceInfo)}
                 >
-                  Perf: {sortingMetrics.sortTime.toFixed(1)}
+                  Perf: {sortingMetrics.durationMs.toFixed(1)}
                   ms
                 </button>
 
@@ -1949,32 +1918,24 @@ export const EventTable: React.FC<EventTableProps> = ({
                     <div className={performanceMetric}>
                       <span className={performanceMetricLabel}>Rows:</span>
                       <span className={performanceMetricValue}>
-                        {formatNumber(sortingMetrics.dataSize ?? 0)}
+                        {formatNumber(sortingMetrics.rowCount)}
                       </span>
                     </div>
 
                     <div className={performanceMetric}>
-                      <span className={performanceMetricLabel}>Algorithm:</span>
-                      <span className={performanceMetricValue}>{sortingMetrics.algorithm}</span>
+                      <span className={performanceMetricLabel}>Sort keys:</span>
+                      <span className={performanceMetricValue}>
+                        {sortingMetrics.sortKeys.join(' → ') || 'none'}
+                      </span>
                     </div>
 
                     <div className={performanceMetric}>
                       <span className={performanceMetricLabel}>Sort time:</span>
                       <span
                         className={performanceMetricValue}
-                        data-highlight={sortingMetrics.sortTime < 10 || undefined}
+                        data-highlight={sortingMetrics.durationMs < 10 || undefined}
                       >
-                        {sortingMetrics.sortTime.toFixed(2)} ms
-                      </span>
-                    </div>
-
-                    <div className={performanceMetric}>
-                      <span className={performanceMetricLabel}>Cache hit:</span>
-                      <span
-                        className={performanceMetricValue}
-                        data-highlight={sortingMetrics.cacheHit || undefined}
-                      >
-                        {sortingMetrics.cacheHit ? 'Yes' : 'No'}
+                        {sortingMetrics.durationMs.toFixed(2)} ms
                       </span>
                     </div>
 

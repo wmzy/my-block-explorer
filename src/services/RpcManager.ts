@@ -32,7 +32,6 @@ const rpcHostForLog = (url: string): string => {
 };
 import { db, userRpcConfigs, customChains } from '../database/init';
 import { seedBuiltinLabels } from '../database/seedBuiltinLabels';
-import { eq } from 'drizzle-orm';
 import { createRetryableDbCall, RpcError, logError } from '../utils/errorHandler';
 
 /**
@@ -243,56 +242,9 @@ export class RpcManager {
     return chain?.name ?? `Chain ${chainId}`;
   }
 
-  // Update a user RPC configuration
-  async updateUserRpcConfig(config: UserRpcConfig): Promise<void> {
-    try {
-      await db
-        .insert(userRpcConfigs)
-        .values({
-          chainId: config.chainId,
-          name: config.customRpcUrl ? `Custom RPC` : null,
-          url: config.customRpcUrl ?? null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: userRpcConfigs.chainId,
-          set: {
-            url: config.customRpcUrl ?? null,
-          },
-        });
-
-      this.userConfigs.set(config.chainId, config);
-      this.clients.delete(config.chainId);
-      this.creatingClients.delete(config.chainId);
-    } catch (error) {
-      logError(error, 'RpcManager.updateUserRpcConfig');
-      throw new Error('Failed to update RPC configuration', { cause: error });
-    }
-  }
-
-  // Delete a user RPC configuration
-  async deleteUserRpcConfig(chainId: number): Promise<void> {
-    try {
-      await db.delete(userRpcConfigs).where(eq(userRpcConfigs.chainId, chainId));
-
-      this.userConfigs.delete(chainId);
-      this.clients.delete(chainId);
-      this.creatingClients.delete(chainId);
-    } catch (error) {
-      logError(error, 'RpcManager.deleteUserRpcConfig');
-      throw new Error('Failed to delete RPC configuration', { cause: error });
-    }
-  }
-
   // Get a user RPC configuration
   getUserRpcConfig(chainId: number): UserRpcConfig | undefined {
     return this.userConfigs.get(chainId);
-  }
-
-  // Get all user RPC configurations
-  getAllUserRpcConfigs(): UserRpcConfig[] {
-    return Array.from(this.userConfigs.values());
   }
 
   // Test an RPC connection

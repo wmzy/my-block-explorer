@@ -2273,3 +2273,86 @@ pnpm typecheck           # tsc --noEmit
   rebuild; recovery = set aside db+wal, fresh boot reseeds labels,
   rpc-configs re-add); (3) file mtime on data/blockchain.db during a
   vitest run is the cheap tell for an unmocked real-DB import.
+
+- **2026-11-15 duplication review fix wave round 10 (4 read-only scouts +
+  8 fix agents + integration)** — 20 findings (dead code ×7, byte-equal or
+  behavior-diverged duplication ×8, inelegance ×5), all fixed. **CRITICAL
+  en-route find — the "trashed journal" incidents of rounds 7/8/9 were NOT
+  (only) concurrent writers**: the adapter's `migrate()` re-verified every
+  RECORDED migration by checking its CREATE TABLE names still existed, but
+  migration 0017 legitimately DROPS four tables older migrations created —
+  so from the first boot after 0017 applied, EVERY subsequent boot on that
+  file re-applied the old migrations, recreated the dropped tables,
+  duplicated journal rows (non-contiguous ids = the "corruption" signature),
+  and hard-failed on `ALTER ... ADD COLUMN already exists`, aborting the
+  chain mid-boot (later tables missing → cause-less "Failed query"). A
+  deterministic single-opener bug, exposed by a two-boot smoke this wave.
+  Fix: a recorded migration with matching hash now skips unconditionally
+  (recording happens only after every statement succeeds, so half-applied
+  resume is the unrecorded-replay path); duplicate-class tolerance extended
+  to `ALTER ... ADD COLUMN` when the column provably exists (resume-safe);
+  regression-pinned by tests/integration/migrationReapply.test.ts
+  (revert-to-red proven: 2/3 tests fail on the pre-fix adapter) and a live
+  three-boot curl smoke (boot 2+3: 0 re-applies, 19 clean skips). The
+  round-9 tests/setup.ts DATABASE_URL isolation remains correct (it fixed
+  a real dual-writer class) but was treating a co-occurring symptom.
+  **Dead code deleted**: `components/RpcErrorAlert.tsx` (148-line
+  zero-importer `export default` — default exports escape named-symbol
+  scans), `RpcManager.updateUserRpcConfig/deleteUserRpcConfig/
+  getAllUserRpcConfigs` (zero callers; the live write path is
+  routes/rpc-config.ts), `CardFooter` + `TokenOverviewCardLink` + the whole
+  `types/rpc.ts` (orphaned RpcErrorInfo — Main caught this after the
+  owning agent flagged it), five grep-proven-dead schema columns (migration
+  0018 via `pnpm db:generate` with meta snapshot: contract_sources.library/
+  licenseType/swarmSource, indexed_addresses.lastActivity/transactionCount).
+  **Canonicals born**: `util/adminGate.ts` (adminGateFromError +
+  rateLimitWaitSeconds — the Ops↔Sql byte-identical 403/429 twins),
+  `utils/fetchJson.ts` (fetchWithTimeout → !ok-throw → .json(); the leaf
+  uses AbortController+setTimeout because this jsdom HAS
+  AbortSignal.timeout but on a native timer fake timers can't drive —
+  empirically probed, not assumed; CompileVerify/nftMetadata/prices
+  migrated, SignatureService deliberately NOT: its non-OK branch logs+nulls
+  instead of throwing), `utils/interruptedRow.ts` (the duplicated
+  INTERRUPTED_ROW_STALE_MS + restart message across AddressScan/
+  EventIndexing), `strictInteger.parseQuantity` (the traceFormat↔txpool
+  byte-equal copy, txpool's header confessed it),
+  `scanParams.windowParam` (ONE strict 1..50M `?window=` reader — transfers'
+  `z.coerce.number()` hole accepted `1e5`/`+7`/whitespace, addresses'
+  regex accepted 0/unbounded), `util/units.ts` GWEI/GWEI_IN_WEI (the
+  1e9/10n**9n factor had 4 homes), `ensForward.ENS_RESOLUTION_CHAIN_ID`
+  consumed by ens.ts, `methodColumn.truncatedAddress` (the views/
+  Transactions 8/6 `…` twin), `api-app.ts API_ENDPOINT_DIRECTORY` (the /api
+  index advertised `/api/blocks` etc. which NEVER existed; banner +
+  notFound + /api all quote the one const now; openapi description fixed to
+  the array shape). **Behavior deltas (intentional)**: watch label cap
+  100→64 (the "mirrors address_labels" comment is finally true; live curl
+  65→400/64→200 verified), addresses/transfers `?window=` junk now
+  degrades to the tiered default (was coerced/forwarded), gasShare parseGas
+  is stricter (rejects 0x/+5/whitespace forms), CallTrace gas share renders
+  '—' instead of 'Infinity%' on non-finite ratios (formatPercentage guard),
+  StoragePanel loading uses the shared LoadingState primitive,
+  `/api` `endpoints` is an array of real templates (integration test maps
+  every template onto a mounted route). **Inelegance fixed**:
+  `utils/sorting-optimization.ts` collapsed 455→136 lines (heap/k-way-merge
+  machinery deleted; EventTable's O(n)-per-sort cache-key row serialization
+  deleted — it cost as much as the sort it saved; perf panel now renders
+  rowCount/sortKeys/durationMs; order-equivalent for all reachable inputs —
+  pages cap at 1000 rows = one chunk = plain stable sort), the
+  parseDecimalInteger alias-shim family migrated to parseDecimalBigInt
+  directly (Blocks/Detail's divergent local renamed parseBlockQuantity),
+  startupChecks UNGATED_WRITE_ENDPOINTS stale enumeration replaced with the
+  generic tier description, cors-origins round-6 stale mirror comment fixed
+  (file stays import-free). **Rules pinned**: (1) a migration runner must
+  NEVER re-verify recorded migrations by object existence — later DROPs make
+  it a permanent false positive; recorded+hash-match = applied;
+  (2) eslint run mid-wave snapshots sibling agents' half-written files
+  (a transient 43-error "baseline" dissolved minutes later) — never take a
+  lint baseline while fix agents are in flight; (3) smoke servers boot on a
+  THROWAWAY `duckdb:///tmp/...` DATABASE_URL, never the dev DB — probe
+  writes (a watch PUT boundary test) otherwise land in real data, and any
+  boot-order surprise trashes the file you develop against; sequential
+  openers still need `adapter.end()` (checkpoint+close) between them;
+  (4) a `bash` async service whose readiness regex misses is still RUNNING
+  — curl the port before concluding boot failure, and kill the orphan pid
+  before its successor (two live servers on one DuckDB file is the real
+  dual-writer case).

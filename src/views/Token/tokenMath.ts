@@ -10,7 +10,7 @@
 // Honest by construction: every aggregate reflects only the scanned rows
 // (coverage may be partial) — callers must render the discovered caveat.
 import type { TokenTransfer } from '@/services/tokenTransfers';
-import { parseDecimalInteger } from '@/views/Address/holdings';
+import { parseDecimalBigInt } from '@/utils/strictInteger';
 import { computeDiscoveredHolders } from '@/views/Address/tokenOverview';
 
 // Mint/burn sentinel (same constant as views/Address/tokenOverview.ts):
@@ -135,7 +135,7 @@ export function aggregateMintBurn(
       excludedTransfers += 1;
       continue;
     }
-    const amount = parseDecimalInteger(transfer.value);
+    const amount = parseDecimalBigInt(transfer.value);
     if (amount === null) {
       excludedTransfers += 1;
       continue;

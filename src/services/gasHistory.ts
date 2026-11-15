@@ -27,6 +27,8 @@ import { formatNumber } from '@/utils/format';
 import { flattenErrorMessage } from '@/utils/errorHandler';
 
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
+// The gwei divisor's one home (util/units, beside its BigInt twin).
+import { GWEI } from '@/util/units';
 
 import { createPolledQueryHook, type PolledQueryResult } from './polledQuery';
 
@@ -44,8 +46,6 @@ const TIER_SAMPLE_BLOCKS = 10;
 
 // Slow / Standard / Fast map to the 25th / 50th / 75th reward percentiles.
 const TIER_PERCENTILE_COUNT = 3;
-
-const GWEI = 1_000_000_000;
 
 export type GasTiers = {
   slow: number;

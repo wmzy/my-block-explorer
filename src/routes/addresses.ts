@@ -19,6 +19,7 @@ import {
 } from '../services/AddressScanService';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { getChainName } from '../config/chains';
+import { windowParam } from '../utils/scanParams';
 
 const logger = createLogger('addresses-routes');
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
@@ -57,12 +58,11 @@ const parseWeiFilterParam = (raw: string | undefined): bigint | undefined => {
 const METHOD_SELECTOR_RE = /^0x[0-9a-fA-F]{8}$/;
 
 // Optional ?window= search-window override in blocks, shared by the list
-// and export endpoints: only fully-numeric values count — undefined, junk
-// or an empty string falls back to the txCount-tiered default (the
-// service clamps to 1..50_000_000 and echoes the effective window in
-// `searchWindowBlocks`).
-const optionalWindowParam = (raw: string | undefined): number | undefined =>
-  raw !== undefined && /^\d+$/.test(raw) ? Number(raw) : undefined;
+// and export endpoints: windowParam (utils/scanParams.ts, strict decimal
+// 1..50_000_000) — undefined, junk, empty, out-of-range all fall back to
+// the txCount-tiered default (echoed in `searchWindowBlocks`). Delta from
+// the old local reader: 0 and oversized values now degrade to the default
+// here instead of reaching the service's clamp.
 
 app.get('/chains/:chainId/addresses/:address', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
@@ -153,10 +153,10 @@ app.get(
 
     const offset = (page - 1) * limit;
 
-    // Optional search-window override in blocks (shared optionalWindowParam
-    // above: fully-numeric only, anything else keeps the txCount-tiered
-    // default).
-    const windowBlocks = optionalWindowParam(c.req.query('window'));
+    // Optional search-window override in blocks (shared windowParam
+    // above: strict decimal 1..50_000_000, anything else keeps the
+    // txCount-tiered default).
+    const windowBlocks = windowParam(c.req.query('window'));
 
     // Additive opt-in (?balanceHistory=1): attaches `balancePoints` — the
     // cumulative discovered-delta series computed from the SAME cached
@@ -363,9 +363,10 @@ app.get(
     const chainId = getValidatedChainId(c.req.param('chainId'));
     const address = getValidatedAddress(c.req.param('address'));
 
-    // Same window parsing as the list endpoint (shared optionalWindowParam:
-    // fully-numeric only, anything else keeps the txCount-tiered default).
-    const windowBlocks = optionalWindowParam(c.req.query('window'));
+    // Same window parsing as the list endpoint (shared windowParam:
+    // strict decimal 1..50_000_000, anything else keeps the tiered
+    // default).
+    const windowBlocks = windowParam(c.req.query('window'));
 
     // Chunked exports start at a non-negative integer offset; anything
     // else fails loudly (same philosophy as the list's page validation)

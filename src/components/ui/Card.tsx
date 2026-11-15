@@ -84,18 +84,3 @@ export type CardContentProps = {
 export function CardContent({ children, className }: CardContentProps) {
   return <div className={cx(cardContentStyle, className)}>{children}</div>;
 }
-
-const cardFooterStyle = css`
-  padding: var(--haze-space-4) var(--haze-space-6);
-  border-top: 1px solid var(--haze-color-border);
-  background-color: var(--haze-color-bg-subtle);
-`;
-
-export type CardFooterProps = {
-  children: ReactNode;
-  className?: string;
-};
-
-export function CardFooter({ children, className }: CardFooterProps) {
-  return <div className={cx(cardFooterStyle, className)}>{children}</div>;
-}

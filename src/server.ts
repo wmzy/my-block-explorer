@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici';
-import apiApp, { reconcileStartupState } from './api-app';
+import apiApp, { API_ENDPOINT_DIRECTORY, reconcileStartupState } from './api-app';
 import { db } from './database/init';
 import { registerSelfDestructCloser } from './services/selfDestruct';
 import { runStartupSecurityChecks } from './startupChecks';
@@ -120,10 +120,12 @@ export async function createServer(options: ServerOptions = {}) {
 
       console.log('');
       console.log('Available endpoints:');
-      console.log('  GET /api                - API information');
-      console.log('  GET /api/health         - Health check');
-      console.log('  GET /api/search?q={}    - Search');
-      console.log('  GET /api/stats/overview - Statistics');
+      // Rendered from api-app's single directory (the same array the
+      // /api index and the 404 availableEndpoints hint quote) so the
+      // banner can never advertise a path that was never mounted.
+      for (const endpoint of API_ENDPOINT_DIRECTORY) {
+        console.log(`  GET ${endpoint}`);
+      }
 
       if (SERVE_STATIC_DIR) {
         console.log('  GET /                   - Frontend application');

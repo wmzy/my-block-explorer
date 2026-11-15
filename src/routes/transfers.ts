@@ -1,12 +1,11 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { createLogger } from '../server/logger';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { tokenTransferService } from '../services/TokenTransferService';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
-import { readStrictInt, refreshSchema } from '../utils/scanParams';
+import { readStrictInt, refreshSchema, windowParam } from '../utils/scanParams';
 
 const logger = createLogger('transfers-routes');
 
@@ -16,12 +15,13 @@ const app = new Hono();
 // utils/scanParams.ts, the shared scan-route reader): a supplied-but-
 // invalid integer is a loud 400 (a wrong page is worse than an error —
 // the same policy the address-transactions route applies); an ABSENT
-// value still takes the documented default.
-
-// The window keeps its documented fallback: a junk or out-of-range window
-// degrades to the service's tiered default and the effective value is
-// echoed back (a scan window is a discovery bound, not a page).
-const windowSchema = z.coerce.number().int().min(1).max(50_000_000).optional().catch(undefined);
+// value still takes the documented default. The window rides the same
+// module's windowParam — strict decimal 1..50_000_000, keeping this
+// route's documented fallback where junk or out-of-range degrades to
+// the service's tiered default and the effective value is echoed back
+// (a scan window is a discovery bound, not a page). The old
+// z.coerce.number() ran Number(), so '1e5'/'+7'/'%207%20' swept a
+// coerced range the client never asked for.
 
 // Scan filter shape. Unlike the numeric params, an explicit-but-unknown
 // mode is REJECTED (400 invalid_mode) rather than degraded: silently
@@ -61,7 +61,7 @@ app.get('/chains/:chainId/addresses/:address/transfers', transfersRateLimiter, a
   }
   const limit = rawLimit.kind === 'value' ? Math.min(rawLimit.value, 100) : 25;
 
-  const windowBlocks = windowSchema.parse(c.req.query('window'));
+  const windowBlocks = windowParam(c.req.query('window'));
   const refresh = refreshSchema.parse(c.req.query('refresh')) === '1';
   // Absent → participant (the pre-token-mode behavior). An explicit value
   // must be exactly one of the known modes.

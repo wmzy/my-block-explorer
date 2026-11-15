@@ -16,25 +16,20 @@ export type TokenHolding =
 // Strict decimal-integer parsing: rejects empty strings, signs, and 0x
 // hex (no trim — the sibling token aggregators rely on that strictness).
 // The ONE implementation is utils/strictInteger's parseDecimalBigInt,
-// imported under this module's long-standing name (used internally here
-// AND re-exported for the aggregators that import it from this module:
-// balanceHistory, nftHoldings, tokenOverview, tokenMath, nftItems).
-import { parseDecimalBigInt as parseDecimalInteger } from '@/utils/strictInteger';
-
-export { parseDecimalInteger };
+// imported directly here and by every sibling aggregator.
+import { parseDecimalBigInt } from '@/utils/strictInteger';
 
 /**
  * Ascending token-id order: numeric ids compare by value (BigInt-exact)
  * and sort before everything else; the remainder compare lexicographically.
- * Numericness is the shared strict decimal shape (parseDecimalInteger
- * delegates to utils/strictInteger), so the value and the classification
- * come from the same ONE definition. Exported for the sibling nftHoldings
- * module — this file is the views/Address family's shared home (same role
- * as its parseDecimalInteger re-export).
+ * Numericness is the shared strict decimal shape (parseDecimalBigInt in
+ * utils/strictInteger), so the value and the classification come from
+ * the same ONE definition. Exported for the sibling nftHoldings module —
+ * this file is the views/Address family's shared home.
  */
 export function compareTokenIds(a: string, b: string): number {
-  const aValue = parseDecimalInteger(a);
-  const bValue = parseDecimalInteger(b);
+  const aValue = parseDecimalBigInt(a);
+  const bValue = parseDecimalBigInt(b);
   if (aValue !== null && bValue !== null) {
     if (aValue !== bValue) return aValue < bValue ? -1 : 1;
     return 0;
@@ -154,7 +149,7 @@ export function aggregateTokenHoldings(
         // One TransferSingle log: a single (tokenId, amount) slot, with the
         // raw value as a fallback for a missing amount.
         const tokenId = transfer.tokenIds?.[0] ?? '?';
-        const amount = parseDecimalInteger(transfer.amounts?.[0] ?? transfer.value);
+        const amount = parseDecimalBigInt(transfer.amounts?.[0] ?? transfer.value);
         if (amount === null) break; // unparseable amount: the row contributes nothing
         const nets = erc1155NetsOf(group);
         nets.set(tokenId, (nets.get(tokenId) ?? 0n) + sign * amount);
@@ -171,7 +166,7 @@ export function aggregateTokenHoldings(
         let contributed = false;
         const nets = erc1155NetsOf(group);
         for (let i = 0; i < length; i += 1) {
-          const amount = parseDecimalInteger(amounts[i]);
+          const amount = parseDecimalBigInt(amounts[i]);
           if (amount === null) continue;
           nets.set(ids[i], (nets.get(ids[i]) ?? 0n) + sign * amount);
           contributed = true;
@@ -192,7 +187,7 @@ export function aggregateTokenHoldings(
           counts.set(id, (counts.get(id) ?? 0) + (sign === 1n ? 1 : sign === -1n ? -1 : 0));
           group.transferCount += 1;
         } else {
-          const amount = parseDecimalInteger(transfer.value);
+          const amount = parseDecimalBigInt(transfer.value);
           if (amount === null) break; // unparseable value: the row contributes nothing
           if (classification === 'erc20') {
             group.erc20Net += sign * amount;

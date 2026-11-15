@@ -33,17 +33,12 @@ export type StartupSecurityPosture = {
   level: StartupSecurityLevel;
 };
 
-// Mutating endpoints that requireAdminTokenIfConfigured leaves ungated when
-// ADMIN_TOKEN is unset (the performance subtree is fail-closed and RPC
-// proxy reads like /contracts/:address/read carry no local state).
-const UNGATED_WRITE_ENDPOINTS = [
-  'POST   /api/rpc-configs',
-  'DELETE /api/rpc-configs/:chainId',
-  'POST|PATCH|DELETE /api/chains/:chainId/contracts/:address/events/ranges*',
-  'POST   /api/chains/:chainId/contracts/:address/clear-cache',
-  'POST   /api/chains/:chainId/contracts/:address/open-in-ide',
-  'DELETE /api/chains/:chainId/contracts/:address/storage-layout/cache',
-] as const;
+// Mutating routes all sit behind the opt-in gate
+// (requireAdminTokenIfConfigured): enforced when ADMIN_TOKEN is set, wide
+// open when it is not. Only the raw-SQL surfaces use the strict
+// fail-closed gate instead — the /api/sql console subtree and the
+// /api/ops/uninstall pair (docs/API.md, Auth section) — so a tokenless
+// public bind exposes every write surface except those two.
 
 export function isLoopbackHost(host: string | undefined): boolean {
   // Unset/empty host = default bind; treated as loopback per policy above.
@@ -89,8 +84,10 @@ function insecureWarning(host: string | undefined, posture: StartupSecurityPostu
   const lines = [banner(`SECURITY WARNING: binding to non-loopback host "${host ?? ''}"`)];
   if (!posture.adminTokenConfigured) {
     lines.push(
-      ' ADMIN_TOKEN is not configured — these mutating endpoints are UNGATED:',
-      ...UNGATED_WRITE_ENDPOINTS.map(endpoint => `   - ${endpoint}`),
+      ' ADMIN_TOKEN is not configured — every mutating route is UNGATED.',
+      ' All writes sit behind the opt-in gate (requireAdminTokenIfConfigured),',
+      ' which passes while the token is unset; only the raw-SQL surfaces fail',
+      ' closed: the /api/sql console and the /api/ops/uninstall pair.',
       ' Anyone who can reach this host can rewrite RPC config and indexing state.',
       ' Set ADMIN_TOKEN to gate them (requests then need the x-admin-token header).',
     );

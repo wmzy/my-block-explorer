@@ -1,9 +1,15 @@
 /**
- * Performance-optimized sorting utilities for large datasets
- * Provides efficient sorting algorithms and optimization strategies
+ * Stable multi-key sorting for client-side table rows (EventTable).
+ *
+ * The chunked k-way-merge path and TTL result cache this module once
+ * carried are gone, deliberately: the only product caller caps
+ * client-side sorting at 1000 rows, where a plain stable Array.sort is
+ * as fast and far simpler; and the cache key had to serialize EVERY row
+ * (O(n) string work) before every sort just to skip the O(n log n) sort
+ * it was warming for. What stays is what was load-bearing: the
+ * comparator semantics (BigInt-exact numerics included) and honest
+ * per-sort metrics.
  */
-
-import { chunk } from './chunk';
 
 export type SortConfig = {
   key: string;
@@ -12,19 +18,11 @@ export type SortConfig = {
   priority?: number;
 };
 
-export type SortingPerformanceMetrics = {
-  algorithmUsed: string;
-  executionTime: number;
-  dataSize: number;
-  memoryUsage: number;
-  cacheHit: boolean;
-};
-
-export type SortingCache = {
-  key: string;
-  data: unknown[];
-  timestamp: number;
-  ttl: number;
+/** Honest per-sort facts: how many rows, by which keys, over how long. */
+export type SortMetrics = {
+  rowCount: number;
+  sortKeys: string[];
+  durationMs: number;
 };
 
 /**
@@ -36,25 +34,17 @@ const EXACT_DECIMAL = /^-?\d+$/;
 /**
  * Compare two numeric values EXACTLY.
  *
- * The previous implementation parsed both sides with parseFloat and
- * subtracted, which is wrong for this module's real inputs: EventTable's
- * 'numeric' columns carry wei decimal strings, and a double's ulp at 1e18
- * is ~222 wei — so 10000000000000000000 and 10000000000000000050 parse to
- * the SAME double, the comparator returns 0, and the two rows stay in
- * whatever order they arrived in. The table looked sorted because a page
- * of wei values is mostly correct anyway, but the order was arbitrary
- * within each double-tie.
+ * 'numeric' columns carry wei decimal strings, and a double's ulp at
+ * 1e18 is ~128 wei — amounts closer than that parse to the SAME double,
+ * so a parseFloat subtraction returns 0 and the rows keep input order.
+ * For real event rows (values clustered far above 2^53) that tie is the
+ * normal case, not an edge.
  *
- * Strategy, cheapest test first:
- *  1. Both plain integer literals (the wei case) → BigInt comparison,
- *     exact at any magnitude.
- *  2. Otherwise → the original parseFloat subtraction, which stays
- *     correct for the small numbers and fractions the other callers use
- *     (chart samples, indices, latencies).
- *
- * A non-finite parse keeps the old behavior (NaN comparison → 0), so a
- * junk cell can never scramble the ordering. Null/undefined are handled
- * here too so the helper is total regardless of the caller's narrowing.
+ * Both plain integer literals → BigInt comparison (exact at any
+ * magnitude); anything else → parseFloat subtraction, still correct for
+ * the small numbers and fractions other callers use. A non-finite parse
+ * keeps NaN → 0, so a junk cell can never scramble the order; nullish
+ * inputs make the helper total regardless of caller narrowing.
  */
 function compareNumbersExactly(a: unknown, b: unknown): number {
   if (a == null && b == null) return 0;
@@ -70,386 +60,77 @@ function compareNumbersExactly(a: unknown, b: unknown): number {
   return parseFloat(aStr) - parseFloat(bStr);
 }
 
+/** Extract a value from an object by dotted key path. */
+function extractValue(obj: Record<string, unknown>, keyPath: string): unknown {
+  return keyPath.split('.').reduce<unknown>((current, key) => {
+    if (current !== null && typeof current === 'object') {
+      return (current as Record<string, unknown>)[key];
+    }
+    return undefined;
+  }, obj);
+}
+
 /**
- * Performance-optimized sorting class for large datasets
+ * Compare two values by a config's type and direction. Null/undefined
+ * sort first ascending and last descending; 'text' and 'address' share
+ * the case-insensitive lexicographic comparison.
  */
-export class OptimizedSorter {
-  private cache = new Map<string, SortingCache>();
-  private cacheMaxSize = 100;
-  private defaultCacheTTL = 30000; // 30 seconds
+function compareValues(a: unknown, b: unknown, config: SortConfig): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return config.direction === 'asc' ? -1 : 1;
+  if (b == null) return config.direction === 'asc' ? 1 : -1;
 
-  /**
-   * Sort data with performance optimizations
-   */
-  sort<T>(
-    data: T[],
-    sortConfigs: SortConfig[],
-    options: {
-      useCache?: boolean;
-      cacheKey?: string;
-      threshold?: number;
-    } = {},
-  ): { sortedData: T[]; metrics: SortingPerformanceMetrics } {
-    const { useCache = true, cacheKey, threshold = 10000 } = options;
+  let comparison: number;
 
-    const startTime = performance.now();
-    const dataSize = data.length;
-
-    // Check cache first
-    if (useCache && cacheKey) {
-      const cachedResult = this.getCachedResult(cacheKey);
-      if (cachedResult) {
-        return {
-          sortedData: cachedResult as T[],
-          metrics: {
-            algorithmUsed: 'cache',
-            executionTime: performance.now() - startTime,
-            dataSize,
-            memoryUsage: this.estimateMemoryUsage(cachedResult),
-            cacheHit: true,
-          },
-        };
-      }
-    }
-
-    // Choose sorting strategy based on data size
-    let sortedData: T[];
-    let algorithmUsed: string;
-
-    if (dataSize === 0) {
-      sortedData = [];
-      algorithmUsed = 'empty';
-    } else if (sortConfigs.length === 0) {
-      sortedData = [...data];
-      algorithmUsed = 'no-sort';
-    } else if (dataSize < threshold) {
-      // For smaller datasets, use standard sort
-      sortedData = this.standardSort(data, sortConfigs);
-      algorithmUsed = 'standard';
-    } else {
-      // For larger datasets, use optimized strategies
-      sortedData = this.optimizedSort(data, sortConfigs);
-      algorithmUsed = 'optimized';
-    }
-
-    const executionTime = performance.now() - startTime;
-
-    // Cache result if enabled
-    if (useCache && cacheKey && dataSize < threshold * 2) {
-      this.setCachedResult(cacheKey, sortedData);
-    }
-
-    return {
-      sortedData,
-      metrics: {
-        algorithmUsed,
-        executionTime,
-        dataSize,
-        memoryUsage: this.estimateMemoryUsage(sortedData),
-        cacheHit: false,
-      },
-    };
+  switch (config.type) {
+    case 'numeric':
+      comparison = compareNumbersExactly(a, b);
+      break;
+    case 'timestamp':
+      comparison = new Date(String(a)).getTime() - new Date(String(b)).getTime();
+      break;
+    case 'address':
+    case 'text':
+    default:
+      comparison = a.toString().toLowerCase().localeCompare(b.toString().toLowerCase());
+      break;
   }
 
-  /**
-   * Standard sort for smaller datasets
-   */
-  private standardSort<T>(data: T[], sortConfigs: SortConfig[]): T[] {
-    const sortedData = [...data];
-    const sortedConfigs = [...sortConfigs].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+  return config.direction === 'desc' ? -comparison : comparison;
+}
 
-    return sortedData.sort((a, b) => {
-      for (const config of sortedConfigs) {
-        const result = this.compareItems(a, b, config);
-        if (result !== 0) return result;
-      }
-      return 0;
-    });
-  }
+/**
+ * Stable multi-key sort: configs apply in ascending priority order
+ * (declaration order breaks priority ties), rows comparing equal under
+ * every config keep their input order (Array.prototype.sort is stable),
+ * and the input array is never mutated. Returns the sorted copy plus
+ * per-sort metrics.
+ */
+export function multiKeySort<T>(
+  data: readonly T[],
+  sortConfigs: readonly SortConfig[],
+): { rows: T[]; metrics: SortMetrics } {
+  const start = performance.now();
+  const configs = [...sortConfigs].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 
-  /**
-   * Optimized sort for large datasets
-   */
-  private optimizedSort<T>(data: T[], sortConfigs: SortConfig[]): T[] {
-    const sortedConfigs = [...sortConfigs].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
-    const primarySort = sortedConfigs[0];
-
-    if (!primarySort) {
-      return [...data];
-    }
-
-    // For large datasets, use chunked sorting to avoid blocking the main thread
-    return this.chunkedSort(data, sortedConfigs);
-  }
-
-  /**
-   * Chunked sorting for very large datasets
-   */
-  private chunkedSort<T>(data: T[], sortConfigs: SortConfig[]): T[] {
-    const chunkSize = 5000; // Process 5000 items at a time
-    const chunks = chunk(data, chunkSize);
-
-    // Sort each chunk individually
-    const sortedChunks = chunks.map(part => this.standardSort(part, sortConfigs));
-
-    // Merge sorted chunks
-    return this.mergeSortedChunks(sortedChunks, sortConfigs);
-  }
-
-  /**
-   * Merge multiple sorted chunks
-   *
-   * Min-heap over the per-chunk heads, root at index 0. The previous
-   * implementation extracted the minimum with `Array.shift()` and then
-   * sifted only the root: shift relocates every remaining element, so
-   * violations appeared at internal nodes that a single root sift-down
-   * cannot repair, and the freshly appended replacement was left as a leaf
-   * that was never sifted up. Either defect let a larger value escape
-   * ahead of a smaller one, so a page above the sort threshold came back
-   * out of order. Root replacement plus one sift-down is the standard
-   * delete-min and restores the invariant over the whole heap.
-   */
-  private mergeSortedChunks<T>(chunks: T[][], sortConfigs: SortConfig[]): T[] {
-    if (chunks.length === 1) return chunks[0];
-
-    const sortedConfigs = [...sortConfigs].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
-
-    // One entry per non-empty chunk: its current head position.
-    const heap: { chunk: number; index: number; value: T }[] = [];
-    chunks.forEach((chunk, chunkIndex) => {
-      if (chunk.length > 0) {
-        heap.push({
-          chunk: chunkIndex,
-          index: 0,
-          value: chunk[0],
-        });
-      }
-    });
-
-    this.buildHeap(heap, sortedConfigs);
-
-    const result: T[] = [];
-    while (heap.length > 0) {
-      const min = heap[0];
-      result.push(min.value);
-
-      // The next head of the same chunk replaces the consumed root; an
-      // exhausted chunk hands over the heap's last element instead.
-      const nextIndex = min.index + 1;
-      const replacement =
-        nextIndex < chunks[min.chunk].length
-          ? { chunk: min.chunk, index: nextIndex, value: chunks[min.chunk][nextIndex] }
-          : heap.length > 1
-            ? heap.pop()!
-            : null;
-
-      if (replacement === null) {
-        heap.pop();
-      } else {
-        heap[0] = replacement;
-        this.heapifyDown(heap, 0, sortedConfigs);
-      }
-    }
-
-    return result;
-  }
-
-  /**
-   * Build heap from array
-   */
-  private buildHeap<T>(
-    heap: { chunk: number; index: number; value: T }[],
-    sortConfigs: SortConfig[],
-  ): void {
-    for (let i = Math.floor(heap.length / 2) - 1; i >= 0; i--) {
-      this.heapifyDown(heap, i, sortConfigs);
-    }
-  }
-
-  /**
-   * Heapify down operation
-   */
-  private heapifyDown<T>(
-    heap: { chunk: number; index: number; value: T }[],
-    index: number,
-    sortConfigs: SortConfig[],
-  ): void {
-    const left = 2 * index + 1;
-    const right = 2 * index + 2;
-    let smallest = index;
-
-    if (left < heap.length && this.compareHeapItems(heap[left], heap[smallest], sortConfigs) < 0) {
-      smallest = left;
-    }
-
-    if (
-      right < heap.length &&
-      this.compareHeapItems(heap[right], heap[smallest], sortConfigs) < 0
-    ) {
-      smallest = right;
-    }
-
-    if (smallest !== index) {
-      [heap[index], heap[smallest]] = [heap[smallest], heap[index]];
-      this.heapifyDown(heap, smallest, sortConfigs);
-    }
-  }
-
-  /**
-   * Compare two heap items
-   *
-   * Every sort config participates, in priority order — the same
-   * lexicographic comparison standardSort applies. Comparing only
-   * `sortConfigs[0]` left ties on the primary key in whatever order the
-   * chunking left them, so a multi-key sort only ever looked right below
-   * the optimized-sort threshold.
-   */
-  private compareHeapItems<T>(
-    a: { chunk: number; index: number; value: T },
-    b: { chunk: number; index: number; value: T },
-    sortConfigs: SortConfig[],
-  ): number {
-    for (const config of sortConfigs) {
-      const result = this.compareItems(a.value, b.value, config);
+  const rows = [...data].sort((a, b) => {
+    for (const config of configs) {
+      const result = compareValues(
+        extractValue(a as Record<string, unknown>, config.key),
+        extractValue(b as Record<string, unknown>, config.key),
+        config,
+      );
       if (result !== 0) return result;
     }
     return 0;
-  }
+  });
 
-  /**
-   * Compare two items based on sort configuration
-   */
-  private compareItems<T>(a: T, b: T, config: SortConfig): number {
-    const aValue = this.extractValue(a as Record<string, unknown>, config.key);
-    const bValue = this.extractValue(b as Record<string, unknown>, config.key);
-
-    return this.compareValues(aValue, bValue, config.type ?? 'text', config.direction);
-  }
-
-  /**
-   * Extract value from object by key path
-   */
-  private extractValue(obj: Record<string, unknown>, keyPath: string): unknown {
-    return keyPath.split('.').reduce<unknown>((current, key) => {
-      if (current !== null && typeof current === 'object') {
-        return (current as Record<string, unknown>)[key];
-      }
-      return undefined;
-    }, obj);
-  }
-
-  /**
-   * Compare two values based on type and direction
-   */
-  private compareValues(a: unknown, b: unknown, type: string, direction: 'asc' | 'desc'): number {
-    // Handle null/undefined values
-    if (a == null && b == null) return 0;
-    if (a == null) return direction === 'asc' ? -1 : 1;
-    if (b == null) return direction === 'asc' ? 1 : -1;
-
-    let comparison: number;
-
-    switch (type) {
-      case 'numeric': {
-        comparison = compareNumbersExactly(a, b);
-        break;
-      }
-
-      case 'timestamp': {
-        const aTime = new Date(String(a)).getTime();
-        const bTime = new Date(String(b)).getTime();
-        comparison = aTime - bTime;
-        break;
-      }
-
-      case 'address': {
-        const aAddr = a.toString().toLowerCase();
-        const bAddr = b.toString().toLowerCase();
-        comparison = aAddr.localeCompare(bAddr);
-        break;
-      }
-
-      case 'text':
-      default: {
-        const aStr = a.toString().toLowerCase();
-        const bStr = b.toString().toLowerCase();
-        comparison = aStr.localeCompare(bStr);
-        break;
-      }
-    }
-
-    return direction === 'desc' ? -comparison : comparison;
-  }
-
-  /**
-   * Get cached result if available and not expired
-   */
-  private getCachedResult(cacheKey: string): unknown[] | null {
-    const cached = this.cache.get(cacheKey);
-    if (!cached) return null;
-
-    const now = Date.now();
-    if (now - cached.timestamp > cached.ttl) {
-      this.cache.delete(cacheKey);
-      return null;
-    }
-
-    return [...cached.data]; // Return a copy
-  }
-
-  /**
-   * Set cached result
-   */
-  private setCachedResult(cacheKey: string, data: readonly unknown[]): void {
-    // Check cache size limit
-    if (this.cache.size >= this.cacheMaxSize) {
-      // Remove oldest entry
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey !== undefined) {
-        this.cache.delete(firstKey);
-      }
-    }
-
-    this.cache.set(cacheKey, {
-      key: cacheKey,
-      data: [...data], // Store a copy
-      timestamp: Date.now(),
-      ttl: this.defaultCacheTTL,
-    });
-  }
-
-  /**
-   * Estimate memory usage of data
-   */
-  private estimateMemoryUsage(data: readonly unknown[]): number {
-    // Rough estimation in bytes
-    return data.length * 1000; // Assume ~1KB per item average
-  }
-
-  /**
-   * Clear cache — cross-test reset seam for the module-global singleton
-   * (production sorts are one-shot, but EventTable's suite resets this
-   * between cases so cache-hit metrics stay order-independent).
-   */
-  clearCache(): void {
-    this.cache.clear();
-  }
-}
-
-// Global optimized sorter instance
-export const optimizedSorter = new OptimizedSorter();
-
-/**
- * Convenience function for optimized sorting
- */
-export function optimizedSort<T>(
-  data: T[],
-  sortConfigs: SortConfig[],
-  options?: {
-    useCache?: boolean;
-    cacheKey?: string;
-    threshold?: number;
-  },
-): { sortedData: T[]; metrics: SortingPerformanceMetrics } {
-  return optimizedSorter.sort(data, sortConfigs, options);
+  return {
+    rows,
+    metrics: {
+      rowCount: rows.length,
+      sortKeys: configs.map(config => config.key),
+      durationMs: performance.now() - start,
+    },
+  };
 }

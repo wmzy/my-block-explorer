@@ -42,10 +42,12 @@ utils/
 ├── rpcReadRetry.ts        # withOneRetry (browser idempotent reads)
 ├── providerErrors.ts      # isShrinkableProviderError etc.
 ├── rpcConfigService.ts    # RPC config management (parseHexQuantity consumer)
-├── strictInteger.ts       # parseStrictInteger + parseHexQuantity (import-free leaf)
+├── strictInteger.ts       # parseStrictInteger + parseHexQuantity + parseDecimalBigInt + parseQuantity (import-free leaf)
 ├── fetchWithTimeout.ts    # AbortController-bounded fetch probe
+├── fetchJson.ts           # fetchWithTimeout + !ok-throw + .json() (one leaf for JSON GETs)
+├── interruptedRow.ts      # shared startup-reconciliation const + restart message
 ├── contractInteraction.ts # Contract call utilities (browser-side viem)
-├── sorting-optimization.ts# Large dataset sorting with caching
+├── sorting-optimization.ts# Lean stable multi-key sort (SortConfig + multiKeySort + honest per-sort metrics)
 ├── serialization.ts       # JSON serialization (BigInt via jsonReplacer)
 ├── validation.ts          # parsePaginationParams, parseChainAndAddressParams
 └── api-error.ts           # API error factory

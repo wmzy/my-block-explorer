@@ -18,6 +18,8 @@ import { parseAbi, type Address } from 'viem';
 
 import { createRpcClient } from '@/utils/realTimeData';
 import { createTtlLruCache } from '@/utils/ttlLruCache';
+// Shared JSON GET leaf (budget + non-2xx reject + parse).
+import { fetchJson as fetchJsonWithBudget } from '@/utils/fetchJson';
 // Canonical record-shape guard (rejects arrays) — import-free leaf.
 import { isRecord } from '@/utils/isRecord';
 // The Error-cause chain flattener (errorHandler's one copy).
@@ -280,21 +282,13 @@ const makeDefaultReadUri = (chainId: number): NftUriReader => {
 };
 
 /**
- * Default metadata fetcher: plain fetch with a 5s timeout signal,
- * non-2xx → reject. AbortSignal.timeout is feature-detected for
- * environments (older jsdom) that lack it.
+ * Default metadata fetcher: delegates to the shared fetchJson leaf
+ * (utils/fetchJson.ts) — 5s budget, non-2xx → reject. The historical
+ * per-site AbortSignal.timeout feature-detect (older jsdom) is absorbed
+ * by the leaf's universal AbortController budget.
  */
-// fetchWithTimeout exempt: this site feature-detects AbortSignal.timeout
-// for older test environments (jsdom) that lack it.
-const defaultFetchJson = async (url: string): Promise<unknown> => {
-  const init: RequestInit =
-    typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-      ? { signal: AbortSignal.timeout(NFT_METADATA_FETCH_TIMEOUT_MS) }
-      : {};
-  const res = await fetch(url, init);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-};
+const defaultFetchJson = (url: string): Promise<unknown> =>
+  fetchJsonWithBudget(url, NFT_METADATA_FETCH_TIMEOUT_MS);
 
 const NONE_OUTCOME: NftMetadataOutcome = Object.freeze({ status: 'none' });
 const UNAVAILABLE_OUTCOME: NftMetadataOutcome = Object.freeze({

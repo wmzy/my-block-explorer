@@ -7,7 +7,8 @@
 // In/out is derived from the row's from/to against the viewed address
 // (NOT the backend `direction` field): the pure function stays correct
 // even if a caller feeds rows whose direction tag is stale or absent.
-import { compareTokenIds, parseDecimalInteger, type SharedTokenClass } from '@/views/Address/holdings';
+import { compareTokenIds, type SharedTokenClass } from '@/views/Address/holdings';
+import { parseDecimalBigInt } from '@/utils/strictInteger';
 import type { TokenTransfer } from '@/services/tokenTransfers';
 
 /** One ERC-1155 id currently held (net > 0) with its exact net amount. */
@@ -135,7 +136,7 @@ export function aggregateNftHoldings(
             }));
       const contributions: { tokenId: string; delta: bigint }[] = [];
       for (const { tokenId, amount } of slots) {
-        const parsed = parseDecimalInteger(amount);
+        const parsed = parseDecimalBigInt(amount);
         if (parsed === null) continue;
         // Each party branch contributes its own sign (a self-transfer
         // nets to zero naturally).

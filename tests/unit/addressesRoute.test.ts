@@ -99,6 +99,45 @@ describe('GET /chains/:chainId/addresses/:address/transactions — window param'
     );
   });
 
+  // Delta pinned from the shared windowParam migration: the old local
+  // reader forwarded 0 and oversized windows for the SERVICE to clamp;
+  // the shared reader strict-degrades them to the tiered default here
+  // (the same policy every other window param already had).
+  it('degrades out-of-range windows to the default instead of forwarding them', async () => {
+    await requestTx('?window=0');
+    expect(addressService.getAddressTransactions).toHaveBeenLastCalledWith(
+      1,
+      ROUTE_ADDRESS,
+      20,
+      0,
+      undefined,
+      { includeBalancePoints: false },
+    );
+
+    await requestTx('?window=50000001');
+    expect(addressService.getAddressTransactions).toHaveBeenLastCalledWith(
+      1,
+      ROUTE_ADDRESS,
+      20,
+      0,
+      undefined,
+      { includeBalancePoints: false },
+    );
+  });
+
+  it('forwards the 50,000,000 upper bound unchanged', async () => {
+    await requestTx('?window=50000000');
+
+    expect(addressService.getAddressTransactions).toHaveBeenCalledWith(
+      1,
+      ROUTE_ADDRESS,
+      20,
+      0,
+      50_000_000,
+      { includeBalancePoints: false },
+    );
+  });
+
   it('forwards window together with page/limit pagination', async () => {
     await requestTx('?page=2&limit=10&window=5000000');
 

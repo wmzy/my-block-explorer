@@ -6,7 +6,8 @@
  * Only STALE rows flip: a row whose updated_at is fresh may belong to a
  * live walk in a peer process (the documented dual-process dev topology),
  * so flipping it would strand a second loop on the same range — see the
- * INTERRUPTED_ROW_STALE_MS rule in EventIndexingService.
+ * INTERRUPTED_ROW_STALE_MS rule in utils/interruptedRow (applied by
+ * EventIndexingService).
  * Runs against a real in-memory DuckDB so the drizzle UPDATE is exercised.
  */
 

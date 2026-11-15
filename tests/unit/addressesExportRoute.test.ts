@@ -92,6 +92,26 @@ describe('GET .../transactions/export', () => {
     );
   });
 
+  it('degrades out-of-range windows to the default like the list (shared windowParam)', async () => {
+    await app.request(`${EXPORT_PATH}?window=0`);
+    expect(mocks.getAddressTransactions).toHaveBeenLastCalledWith(
+      1,
+      ROUTE_ADDRESS,
+      ADDRESS_EXPORT_MAX_ROWS,
+      0,
+      undefined,
+    );
+
+    await app.request(`${EXPORT_PATH}?window=999999999`);
+    expect(mocks.getAddressTransactions).toHaveBeenLastCalledWith(
+      1,
+      ROUTE_ADDRESS,
+      ADDRESS_EXPORT_MAX_ROWS,
+      0,
+      undefined,
+    );
+  });
+
   it.each(['abc', '-5', '12abc', '1.5'])('rejects offset %s with 400 invalid_offset', async raw => {
     const res = await app.request(`${EXPORT_PATH}?offset=${raw}`);
     expect(res.status).toBe(400);

@@ -25,14 +25,15 @@ import {
   WATCH_EVENTS_DEFAULT_LIMIT,
   WATCH_EVENTS_MAX_LIMIT,
 } from '../services/WatchService';
+import { LABEL_MAX_LENGTH } from '../utils/labelContract';
 
 const logger = createLogger('watch-routes');
 
 const app = new Hono();
 
-// Mirrors the address_labels.label budget; enforced again in the service
-// so every entry point agrees on the cap.
-const LABEL_MAX_LENGTH = 100;
+// Label budget: the canonical address-label cap (utils/labelContract,
+// the same constant routes/labels.ts enforces) — tightened from the old
+// local 100, which only claimed to mirror it.
 
 // Webhook URL budget (the route's half of the contract; the sender side
 // lives in utils/webhooks.ts).

@@ -20,6 +20,9 @@
 // Relative on purpose: reachable from the vite.config.ts esbuild graph,
 // which does not resolve the @/ alias (AGENTS.md).
 import { selectorOf } from './txDecode';
+// The bigint-exact quantity reader's one home: this import-free leaf
+// (txpool shares the same copy).
+import { parseQuantity } from './strictInteger';
 
 /** What the narrow cast promises: EIP-1193 request args in, unknown JSON out. */
 export type UntypedRpcRequestArgs = { method: string; params: unknown[] };
@@ -66,32 +69,6 @@ export type CallTraceNode = {
   depth: number;
   /** Sub-calls in execution order; empty when the frame made none. */
   calls: CallTraceNode[];
-};
-
-/**
- * Hex quantity ("0x…"), decimal string, or JSON number → exact bigint.
- * Negative or non-integer values are nonsense for gas/value and read as
- * null (absent), not 0.
- */
-const parseQuantity = (raw: unknown): bigint | null => {
-  if (typeof raw === 'bigint') return raw >= 0n ? raw : null;
-  if (typeof raw === 'number') {
-    // JSON has no big integers: a literal past 2^53 was already rounded by
-    // JSON.parse before this function saw it, and `isInteger` cannot tell a
-    // rounded value from an exact one. Below the safe range every integer is
-    // exactly representable, so those stay accepted; above it the field is
-    // unusable and degrades to the honest absence (null).
-    return Number.isSafeInteger(raw) && raw >= 0 ? BigInt(raw) : null;
-  }
-  if (typeof raw === 'string' && raw !== '') {
-    try {
-      const value = BigInt(raw);
-      return value >= 0n ? value : null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
 };
 
 /** Non-empty string → itself, anything else → null (honest absence). */

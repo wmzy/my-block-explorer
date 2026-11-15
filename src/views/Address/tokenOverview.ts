@@ -12,7 +12,7 @@
 // incompleteness caveat.
 import type { TokenTransfer } from '@/services/tokenTransfers';
 import { formatRawUnits } from '@/utils/format';
-import { parseDecimalInteger } from '@/views/Address/holdings';
+import { parseDecimalBigInt } from '@/utils/strictInteger';
 
 /** Settled per-probe reads; null = that call reverted or returned nothing. */
 export type TokenOverviewReadsInput =
@@ -121,7 +121,7 @@ export function computeDiscoveredHolders(
       excludedTransfers += 1;
       continue;
     }
-    const amount = parseDecimalInteger(transfer.value);
+    const amount = parseDecimalBigInt(transfer.value);
     if (amount === null) {
       excludedTransfers += 1;
       continue;

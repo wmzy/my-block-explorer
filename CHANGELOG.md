@@ -9,6 +9,51 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-15 duplication review fix wave round 10 (4 read-only scouts +
+  8 concurrent fix agents + integration)** — round 10; 20 findings from a
+  four-scout review, all fixed. All verified: tsc 0 errors, eslint 0 errors
+  (110 warnings, pre-existing classes), `vitest --changed --maxWorkers=4`
+  287 files / 3765 tests green, `pnpm build` green, three-boot live smoke
+  on a throwaway DuckDB + curl boundary probes + browser pass (Home / /ops
+  / /sql with the fail-closed admin faces). **Critical en-route fix —
+  migration re-apply loop (pre-existing since migration 0017)**: the
+  adapter re-verified RECORDED migrations by checking their tables still
+  existed; 0017 legitimately drops four old tables, so every boot after it
+  applied re-ran the old chain (recreating dropped tables, duplicating
+  journal ids, hard-failing on `ALTER ... ADD COLUMN already exists` and
+  aborting mid-boot). This — not concurrent writers alone — was the
+  recurring "trashed journal" incident of the 2026-11-13/14 waves. A
+  recorded+hash-matching migration now skips unconditionally, and the
+  resume tolerance covers verified duplicate CREATE TABLE and ADD COLUMN;
+  regression-pinned (red on the old adapter) and live three-boot proven.
+  **Dead code deleted**: RpcErrorAlert.tsx (zero importers), three dead
+  RpcManager methods, CardFooter, TokenOverviewCardLink, types/rpc.ts,
+  five dead schema columns (migration 0018: contract_sources
+  library/licenseType/swarmSource, indexed_addresses
+  lastActivity/transactionCount). **New canonicals**: util/adminGate.ts
+  (Ops↔Sql 403/429 twins), utils/fetchJson.ts (one leaf for JSON GETs),
+  utils/interruptedRow.ts (shared restart-reconciliation const+message),
+  strictInteger.parseQuantity (traceFormat↔txpool verbatim copy),
+  scanParams.windowParam (ONE strict `?window=` reader — closes the
+  transfers z.coerce hole that accepted `1e5`/`+7`), util/units GWEI
+  constants (had 4 homes), ENS_RESOLUTION_CHAIN_ID shared by both ENS
+  modules, methodColumn.truncatedAddress,
+  api-app API_ENDPOINT_DIRECTORY (the `/api` index advertised three
+  endpoints that never existed; banner/notFound//api now quote one const).
+  **Behavior deltas (intentional)**: watch label cap 100→64 (canonical
+  labelContract; live 65→400 / 64→200 verified), `?window=` junk degrades
+  to the tiered default on addresses/transfers, gasShare rejects
+  0x/+sign/whitespace forms, CallTrace gas share renders '—' instead of
+  'Infinity%' on non-finite ratios, StoragePanel uses the LoadingState
+  primitive, `/api` endpoints is an array of real path templates
+  (integration test maps each onto a mounted route). **Inelegance fixed**:
+  sorting-optimization.ts collapsed 455→136 lines (heap machinery + a
+  self-defeating O(n)-per-sort cache key deleted; perf panel now renders
+  rowCount/sortKeys/durationMs), parseDecimalInteger alias-shim family
+  dissolved into parseDecimalBigInt, startupChecks stale endpoint
+  enumeration replaced with the generic tier description, stale
+  cors-origins mirror comment corrected.
+
 - **2026-11-14 duplication review fix wave round 9 (4 read-only scouts +
   4 concurrent fix agents + integration)** — round 9; 21 findings
   adjudicated (16 fixed, 5 deferred), net −22 lines / 45 files (the line

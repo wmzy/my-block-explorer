@@ -39,6 +39,25 @@ const app = new Hono();
 // Shared request-body ceiling (see the bodyLimit middleware below).
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
+// Single source of truth for the API's advertised surface: the GET /api
+// index, the notFound 404's availableEndpoints hint, and the standalone
+// server's boot banner (src/server.ts) all render from this one array.
+// Three hand-maintained copies drifted before — the /api index advertised
+// /api/blocks, /api/transactions and /api/addresses, which have never
+// existed (the chain-scoped surface lives under /api/chains/{chainId}).
+// Every entry MUST be a real mounted route; tests/integration/api-routes
+// pins each template against app.routes.
+export const API_ENDPOINT_DIRECTORY: readonly string[] = [
+  '/api',
+  '/api/health',
+  '/api/search?q={query}',
+  '/api/stats/overview',
+  '/api/chains/{chainId}/blocks',
+  '/api/chains/{chainId}/transactions',
+  '/api/chains/{chainId}/addresses/{address}',
+  '/api/chains/{chainId}/contracts/{address}/events',
+];
+
 app.use('*', corsMiddleware);
 app.use('*', loggerMiddleware);
 app.use('*', timing());
@@ -101,14 +120,7 @@ app.get('/api', c => {
     name: 'My Block Explorer API',
     version: appVersion(),
     description: 'A modern blockchain explorer API',
-    endpoints: {
-      health: '/api/health',
-      search: '/api/search?q={query}',
-      stats: '/api/stats/overview',
-      blocks: '/api/blocks',
-      transactions: '/api/transactions',
-      addresses: '/api/addresses',
-    },
+    endpoints: API_ENDPOINT_DIRECTORY,
     timestamp: new Date().toISOString(),
   });
 });
@@ -225,16 +237,7 @@ void ensureBuiltInChainsLoaded();
 app.notFound(c => {
   return c.json(
     createApiError(404, 'Not Found', `API endpoint not found: ${c.req.path}`, {
-      availableEndpoints: [
-        '/api',
-        '/api/health',
-        '/api/search?q={query}',
-        '/api/stats/overview',
-        '/api/chains/{chainId}/blocks',
-        '/api/chains/{chainId}/transactions',
-        '/api/chains/{chainId}/addresses/{address}',
-        '/api/chains/{chainId}/contracts/{address}/events',
-      ],
+      availableEndpoints: API_ENDPOINT_DIRECTORY,
     }),
     404,
   );

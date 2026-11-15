@@ -63,6 +63,8 @@ const JUNK = ['0x10', '1e2', ' 7 ', '+7', '0x1a', '1e5'];
 /** The limit the service was actually asked for. */
 const askedLimit = (): unknown => mocks.recentEvents.mock.calls.at(-1)?.[1];
 const askedCursor = (): unknown => mocks.getTokenTransfers.mock.calls.at(-1)?.[2];
+// getTokenTransfers(chainId, address, cursor, limit, windowBlocks, …) — index 4.
+const askedTransfersWindow = (): unknown => mocks.getTokenTransfers.mock.calls.at(-1)?.[4];
 // getApprovals(chainId, address, windowBlocks, refresh) — index 2.
 const askedWindow = (): unknown => mocks.listApprovals.mock.calls.at(-1)?.[2];
 
@@ -132,6 +134,27 @@ describe('GET /transfers — cursor/limit/window must be plain decimal integers'
       app.request(`/chains/1/addresses/${ADDRESS}/transfers?cursor=40`),
     ).resolves.toMatchObject({ status: 200 });
     expect(askedCursor()).toBe(40);
+  });
+
+  // The window keeps the degrade-to-default policy (a scan window is a
+  // discovery bound, not a page); what must not survive is the old
+  // z.coerce.number() behavior, where Number() resolved '1e5' to 100000
+  // and ' 7 ' to 7 — a coerced sweep the client never asked for.
+  it.each(JUNK)('degrades ?window=%j to the default instead of a coerced sweep', async raw => {
+    const res = await app.request(
+      `/chains/1/addresses/${ADDRESS}/transfers?window=${encodeURIComponent(raw)}`,
+    );
+
+    expect(res.status).toBe(200);
+    // undefined = the service's own tiered default window.
+    expect(askedTransfersWindow()).toBeUndefined();
+  });
+
+  it('serves a plain integer window unchanged', async () => {
+    await expect(
+      app.request(`/chains/1/addresses/${ADDRESS}/transfers?window=5000`),
+    ).resolves.toMatchObject({ status: 200 });
+    expect(askedTransfersWindow()).toBe(5000);
   });
 });
 

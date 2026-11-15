@@ -1,5 +1,6 @@
 // Watch route contract: address/chain validation, PUT body validation
-// (label ≤100, cleared by absence/null/empty), the honest 400s mapped
+// (label ≤64 — the shared address-label budget from utils/labelContract,
+// cleared by absence/null/empty), the honest 400s mapped
 // from the service (rpc_unavailable / watch_full), the events limit
 // (default 25, capped at 100, non-positive → 400), the admin gate and
 // the 5/min write limiter, and DELETE 204/404. The WatchService is
@@ -138,8 +139,23 @@ describe('PUT /chains/:chainId/watch/:address — validation', () => {
     );
   });
 
+  it('accepts a label at the 64-char address-label budget', async () => {
+    serviceMocks.upsertSubscription.mockResolvedValue({
+      ok: true,
+      subscription: SUBSCRIPTION_VIEW,
+    });
+    const res = await put({ label: 'x'.repeat(64) });
+    expect(res.status).toBe(200);
+    expect(serviceMocks.upsertSubscription).toHaveBeenCalledWith(
+      1,
+      WATCH_ADDRESS,
+      'x'.repeat(64),
+      undefined,
+    );
+  });
+
   it.each([
-    ['label over 100 chars', { label: 'x'.repeat(101) }],
+    ['label over 64 chars', { label: 'x'.repeat(65) }],
     ['non-string label', { label: 7 }],
     ['array body', ['x']],
   ])('rejects %s with 400 invalid_label', async (_name, body) => {

@@ -37,12 +37,6 @@ export const cardStyles = css`
   }
 `;
 
-export const loadingStyles = css`
-  text-align: center;
-  padding: 40px;
-  color: var(--haze-color-text-muted);
-`;
-
 // Spacing delta for page-level error boxes on top of the shared error
 // family (the family owns background/border/color/padding/radius).
 export const errorStyles = css`

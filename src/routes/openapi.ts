@@ -303,7 +303,7 @@ export const openApiDocument: OpenApiDocument = {
               name: str(),
               version: str('App version (same source as /health)'),
               description: str(),
-              endpoints: fields({}, 'Map of capability → path template'),
+              endpoints: arr(str(), 'Array of GET path templates (API_ENDPOINT_DIRECTORY in src/api-app.ts)'),
             }),
           ),
         },
@@ -683,7 +683,7 @@ export const openApiDocument: OpenApiDocument = {
           }),
           q(
             'window',
-            'Search window in blocks (clamped 1–50,000,000); only fully-numeric values count.',
+            'Search window in blocks (plain decimal 1–50,000,000 only; junk, empty or out-of-range falls back to the tiered default).',
             int(),
           ),
           q(
@@ -799,7 +799,11 @@ export const openApiDocument: OpenApiDocument = {
           addressParam(),
           q('cursor', '0-based cursor into the scanned set.', { type: 'integer', default: 0 }),
           q('limit', 'Page size (1–100).', { type: 'integer', default: 25 }),
-          q('window', 'Scanned range in blocks (1–50,000,000).', int()),
+          q(
+            'window',
+            'Scanned range in blocks (plain decimal 1–50,000,000; junk/out-of-range falls back to the tiered default).',
+            int(),
+          ),
           q('refresh', 'Literal \'1\' skips the ~60s scan cache (a genuine re-scan).', {
             type: 'string',
             enum: ['1'],
@@ -2261,7 +2265,7 @@ export const openApiDocument: OpenApiDocument = {
         parameters: [chainIdParam(), addressParam()],
         requestBody: jsonBody(
           fields({
-            label: str('≤100 chars; null/empty clears; absent = unchanged'),
+            label: str('≤64 chars (the shared address-label budget); null/empty clears; absent = unchanged'),
             webhookUrl: str('http(s), ≤512 chars else 400 invalid_webhook_url; null/empty clears'),
           }),
           'An empty body is a valid "no label" upsert.',

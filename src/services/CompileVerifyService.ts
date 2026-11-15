@@ -33,6 +33,7 @@ import { errorMessage } from '../utils/errorHandler';
 // Canonical record-shape guard (rejects arrays) and the shared fetch
 // budget wrapper + one-day constant — all import-free leaves.
 import { isRecord } from '../utils/isRecord';
+import { fetchJson } from '../utils/fetchJson';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { MS_PER_DAY } from '../utils/time';
 import type { Address } from 'viem';
@@ -1367,10 +1368,8 @@ const extractAbi = (contract: Record<string, unknown>): string => {
   return Array.isArray(abi) ? JSON.stringify(abi) : '[]';
 };
 
-const defaultFetchJson = async (url: string, timeoutMs: number): Promise<unknown> => {
-  const response = await fetchWithTimeout(url, {}, timeoutMs);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return await response.json();
-};
+// Shared leaf (utils/fetchJson.ts): budget + non-2xx reject + JSON parse.
+const defaultFetchJson = (url: string, timeoutMs: number): Promise<unknown> =>
+  fetchJson(url, timeoutMs);
 
 export const compileVerifyService = new CompileVerifyService();

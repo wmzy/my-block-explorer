@@ -21,7 +21,8 @@
 
 import { useEffect, useState } from 'react';
 import { getAddress } from 'viem';
-import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
+import { fetchJson } from '@/utils/fetchJson';
+import { GWEI } from '@/util/units';
 import { createTtlLruCache } from '@/utils/ttlLruCache';
 import { chunk } from '@/utils/chunk';
 import { errorMessage } from '@/utils/errorHandler';
@@ -146,9 +147,7 @@ const runChunk = async (
   let coins: Record<string, unknown> | null = null;
 
   try {
-    const response = await fetchWithTimeout(`${API_URL}${chunk.join(',')}`, {}, REQUEST_TIMEOUT_MS);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const parsed: unknown = await response.json();
+    const parsed: unknown = await fetchJson(`${API_URL}${chunk.join(',')}`, REQUEST_TIMEOUT_MS);
     if (isRecord(parsed) && isRecord(parsed.coins)) {
       coins = parsed.coins;
     }
@@ -416,7 +415,7 @@ export function gasTransferCostUsd(
   gweiPrice: number,
   price: UsdPriceSnapshot,
 ): number {
-  return ((gasUnits * gweiPrice) / 1e9) * price.usd;
+  return ((gasUnits * gweiPrice) / GWEI) * price.usd;
 }
 
 // ---------------------------------------------------------------------------
@@ -588,13 +587,10 @@ const runHistoryRequest = async (
   const start = nowEpochSeconds - windowDays * SECONDS_PER_DAY;
   let parsed: unknown;
   try {
-    const response = await fetchWithTimeout(
+    parsed = await fetchJson(
       priceHistoryUrl(coinId, windowDays, nowEpochSeconds),
-      {},
       REQUEST_TIMEOUT_MS,
     );
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    parsed = await response.json();
   } catch (error) {
     console.warn('[prices] DefiLlama chart request failed:', errorMessage(error));
     return { status: 'unavailable', reason: 'request failed' };

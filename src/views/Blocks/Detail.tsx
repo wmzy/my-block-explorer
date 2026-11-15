@@ -62,15 +62,17 @@ const BLOB_GAS_PER_BLOB = 131_072n;
 // on top: surrounding whitespace is trimmed (historical behavior).
 // BigInt('') is 0n, so empty/non-numeric values must stay undefined — an
 // absent field rendered as zero would be a fabricated number.
-const parseDecimalInteger = (value: string): bigint | undefined =>
+// (Deliberately NOT the canonical parseDecimalBigInt: this view's fields
+// arrive with historical padding, so the trim stays visible HERE.)
+const parseBlockQuantity = (value: string): bigint | undefined =>
   parseDecimalBigInt(value.trim()) ?? undefined;
 
 // baseFeePerGas × gasUsed in wei. Both are decimal-string integers per the
 // RpcBlock contract; anything unparseable collapses to undefined so the
 // row is skipped rather than rendered from a fabricated number.
 export const computeBurntFees = (baseFeePerGas: string, gasUsed: string): bigint | undefined => {
-  const baseFee = parseDecimalInteger(baseFeePerGas);
-  const used = parseDecimalInteger(gasUsed);
+  const baseFee = parseBlockQuantity(baseFeePerGas);
+  const used = parseBlockQuantity(gasUsed);
   if (baseFee === undefined || used === undefined) return undefined;
   return baseFee * used;
 };
@@ -82,7 +84,7 @@ export const formatEthValue = (wei: bigint): string => formatUnits(wei, 18);
 // Gwei-integer withdrawal amounts → exact ETH (9 decimals is lossless);
 // unparseable values fall back to the raw string, never a NaN.
 export const formatWithdrawalEth = (gwei: string): string => {
-  const amount = parseDecimalInteger(gwei);
+  const amount = parseBlockQuantity(gwei);
   return amount === undefined ? gwei : formatUnits(amount, 9);
 };
 
@@ -90,7 +92,7 @@ export const formatWithdrawalEth = (gwei: string): string => {
 // whole multiple per protocol). BigInt division floors, so a malformed
 // non-multiple still renders a sane count instead of a fabricated ratio.
 export const blobCountFromGas = (blobGasUsed: string): number | undefined => {
-  const used = parseDecimalInteger(blobGasUsed);
+  const used = parseBlockQuantity(blobGasUsed);
   if (used === undefined) return undefined;
   return Number(used / BLOB_GAS_PER_BLOB);
 };

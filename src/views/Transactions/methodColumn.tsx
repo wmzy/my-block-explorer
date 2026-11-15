@@ -140,6 +140,14 @@ export const methodColumnStyle = css`
 
 const truncateSelector = (selector: string): string => `${selector.slice(0, 8)}…`;
 
+// Address truncation for tight inline links (the trace rows and the
+// token-transfer list both render 8 head chars + ellipsis + 6 tail). The
+// canonical formatHash/formatAddress in utils/format keep their own
+// budgets and glyphs — this is the plain inline-link shape the
+// Transactions family shares. Exported as the family's one copy.
+export const truncatedAddress = (address: string): string =>
+  `${address.slice(0, 8)}…${address.slice(-6)}`;
+
 // Standalone protocol chip for surfaces that show a to-address-derived
 // method header (the tx detail page's Method row): renders nothing when
 // the address is not in the curated set for the chain. Exported for

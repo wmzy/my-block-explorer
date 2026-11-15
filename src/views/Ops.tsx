@@ -35,6 +35,7 @@ import {
   requestBackendUninstall,
   type UninstallPreview,
 } from '@/services/opsSummary';
+import { adminGateFromError, rateLimitWaitSeconds } from '@/util/adminGate';
 import { ApiError } from '@/util/apiError';
 import { toastCopy } from '@/util/clipboard';
 import { isBackendUnreachable } from '@/util/http';
@@ -53,18 +54,10 @@ import { formatDuration, formatFileSize, formatNumber } from '@/utils/format';
 // recovery copy differs, so the distinction must survive.
 export type OpsAdminGate = 'unconfigured' | 'unauthorized';
 
-export function opsAdminGateFromError(error: unknown): OpsAdminGate | null {
-  if (!(error instanceof ApiError) || error.status !== 403) return null;
-  return /Set ADMIN_TOKEN on the server/i.test(error.message) ? 'unconfigured' : 'unauthorized';
-}
-
-// The backend's 429 body message carries the wait ("…retry after 3s."),
-// same fixed format as every limiter in this app.
-export function opsRateLimitWaitSeconds(error: unknown): number | null {
-  if (!(error instanceof ApiError) || error.status !== 429) return null;
-  const match = /retry after (\d+)s/i.exec(error.message);
-  return match ? Number(match[1]) : null;
-}
+// The classification itself is the shared leaf (util/adminGate.ts) both
+// admin surfaces use; this historical name remains the view tests'
+// import point.
+export const opsAdminGateFromError = adminGateFromError;
 
 // --- Pure display helpers (exported for the view tests) ---
 
@@ -314,7 +307,7 @@ function SummaryErrorNotice({ error, onRetry }: { error: unknown; onRetry: () =>
     return <BackendOfflineState onRetryConnection={onRetry} />;
   }
   if (error instanceof ApiError && error.status === 429) {
-    const wait = opsRateLimitWaitSeconds(error);
+    const wait = rateLimitWaitSeconds(error);
     return (
       <Alert variant="warning">
         Rate limited — the ops summary allows 6 requests per minute.{' '}
@@ -607,14 +600,14 @@ function BackupCard() {
 // wait and backend-unreachable attribution follow the page's established
 // copy. Exported for the view tests.
 export function uninstallErrorText(error: unknown): string {
-  const gate = opsAdminGateFromError(error);
+  const gate = adminGateFromError(error);
   if (gate === 'unauthorized') {
     return 'The server requires an admin token for this action. Set it in the RPC/settings modal (⚙) and retry.';
   }
   if (gate !== null) {
     return 'This backend has no ADMIN_TOKEN configured, so it rejects every uninstall request by design — erasing all server data fails closed, and the server cannot authorize anyone. Start the server with ADMIN_TOKEN set and reload this page, or run my-block-explorer uninstall in a terminal (it deletes the same files).';
   }
-  const wait = opsRateLimitWaitSeconds(error);
+  const wait = rateLimitWaitSeconds(error);
   if (wait !== null) return `Too many requests — retry after ${wait}s.`;
   if (isBackendUnreachable(error)) {
     return 'The backend is unreachable — it may already be shutting down. Nothing was confirmed.';
@@ -880,7 +873,7 @@ export default function Ops() {
     });
   };
 
-  const gate = opsAdminGateFromError(summary.error);
+  const gate = adminGateFromError(summary.error);
 
   return (
     <>

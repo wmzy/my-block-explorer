@@ -3,6 +3,9 @@ import type { Transaction } from '@/types/blockchain';
 
 import { api, get, longRunningApi, withSignal } from '@/util/http';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
+// Type-only: erased at build time, so the addressScan service graph is
+// not pulled in through this module's runtime imports.
+import type { ScanJob } from './addressScan';
 
 // Honesty fields come from the heuristic-history backend when it ran.
 // Contract: `total` counts DISCOVERED (deduped) transactions — never the
@@ -38,22 +41,13 @@ export type AddressTransactionPage = {
   /**
    * Deep-scan job state when one exists for this address (absent on
    * legacy payloads — the backend drops the key when no job row exists).
-   * Shape: the /scan job DTO; parsed defensively by the Deep Scan panel
-   * (scanJobFromTxPayload in services/addressScan.ts), so this typed
-   * surface is documentation + direct consumers, not a hard dependency.
+   * The shape IS the /scan job DTO: ScanJob from services/addressScan.ts
+   * (its additive traces fields ride the same wire rows). Parsed
+   * defensively by the Deep Scan panel (scanJobFromTxPayload in
+   * services/addressScan.ts), so this typed surface is documentation +
+   * direct consumers, not a hard dependency.
    */
-  deepScan?: {
-    status: 'pending' | 'running' | 'paused' | 'error' | 'complete';
-    fromBlock: number;
-    toBlock: number;
-    cursorBlock: number;
-    blocksWalked: number;
-    blocksTotal: number;
-    txsFound: number;
-    errorMessage: string | null;
-    coverage: 'complete' | null;
-    updatedAt: string;
-  };
+  deepScan?: ScanJob;
 };
 
 // Response envelope of GET /api/chains/:chainId/addresses/:address. The

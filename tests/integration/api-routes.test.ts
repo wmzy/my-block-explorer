@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
-import app from '@/api-app';
+import app, { API_ENDPOINT_DIRECTORY } from '@/api-app';
 
 // The version reported by /api and /api/health is the package.json field
 // (src/version.ts) — pin the contract, not the literal, so releases don't
@@ -38,6 +38,35 @@ describe('API routes', () => {
       expect(data).toHaveProperty('endpoints');
       expect(data).toHaveProperty('timestamp');
     });
+
+    it('advertises only real mounted routes', async () => {
+      // The index once carried its own hand-maintained list, which drifted
+      // to advertise /api/blocks, /api/transactions and /api/addresses —
+      // paths that have never existed (the chain-scoped surface lives
+      // under /api/chains/{chainId}). It now embeds the shared directory,
+      // and every directory template is proven against the routes Hono
+      // actually registered (curl-free: query strings stripped, {param}
+      // placeholders rewritten to hono's :param form).
+      const response = await app.request('/api', { method: 'GET' });
+      expect(response.status).toBe(200);
+
+      const data = await response.json();
+      expect(data.endpoints).toEqual([...API_ENDPOINT_DIRECTORY]);
+      for (const bogus of ['/api/blocks', '/api/transactions', '/api/addresses']) {
+        expect(data.endpoints).not.toContain(bogus);
+      }
+
+      const mountedGetPaths = new Set(
+        app.routes.filter(r => r.method === 'GET').map(r => r.path),
+      );
+      for (const template of API_ENDPOINT_DIRECTORY) {
+        const honoPath = template.split('?')[0].replaceAll(/\{(\w+)\}/g, ':$1');
+        expect(
+          mountedGetPaths,
+          `directory entry is not a mounted GET route: ${template}`,
+        ).toContain(honoPath);
+      }
+    });
   });
 
   describe('GET /api/health', () => {
@@ -68,6 +97,8 @@ describe('API routes', () => {
       expect(data).toHaveProperty('message');
       expect(data).toHaveProperty('statusCode', 404);
       expect(data).toHaveProperty('timestamp');
+      // The hint quotes the same single directory the /api index serves.
+      expect(data.details).toEqual({ availableEndpoints: [...API_ENDPOINT_DIRECTORY] });
     });
   });
 

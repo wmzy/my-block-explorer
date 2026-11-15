@@ -1,7 +1,8 @@
 import { css, cx } from '@linaria/core';
 import { useStorageLayout } from '@/services/contracts';
 import { StorageExplorer } from '@/components/storage';
-import { cardStyles, errorStyles, loadingStyles, noticeBoxError, noticeBoxWarn } from './styles';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { cardStyles, errorStyles, noticeBoxError, noticeBoxWarn } from './styles';
 import type { ContractSource } from './types';
 
 // Spacing for the evmole provenance note on top of the shared warn family.
@@ -48,7 +49,7 @@ export function StoragePanel({
     return (
       <div className={cardStyles}>
         <h2>Storage Layout</h2>
-        <div className={loadingStyles}>Loading storage layout...</div>
+        <LoadingState message="Loading storage layout..." />
       </div>
     );
   }

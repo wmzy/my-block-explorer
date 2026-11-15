@@ -17,7 +17,7 @@
 //   curve. The card must then say the balance before the oldest
 //   discovered transaction is unknown.
 // - Every sum is BigInt-exact wei; floats only ever touch pixel mapping.
-import { parseDecimalInteger } from '@/views/Address/holdings';
+import { parseDecimalBigInt } from '@/utils/strictInteger';
 import { formatNativeDisplay } from '@/utils/format';
 
 /** Serialized discovered-tx row as the API returns it (numerics as strings). */
@@ -81,8 +81,8 @@ type ParsedTx = {
  * transactions only.
  */
 function parseTx(tx: BalanceTxInput, lowerAddr: string): ParsedTx | null {
-  const blockNumber = parseDecimalInteger(tx.blockNumber);
-  const value = parseDecimalInteger(tx.value);
+  const blockNumber = parseDecimalBigInt(tx.blockNumber);
+  const value = parseDecimalBigInt(tx.value);
   if (blockNumber === null || value === null) return null;
   let delta = 0n;
   if (tx.fromAddress.toLowerCase() === lowerAddr) delta -= value;

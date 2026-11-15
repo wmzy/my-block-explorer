@@ -12,10 +12,9 @@
 // the hook never throws and never invents a name.
 import { createRpcClient } from '@/utils/realTimeData';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
-
 // ENS records only exist on mainnet; both forward and reverse resolution
-// always target chain 1.
-const ENS_CHAIN_ID = 1;
+// always target chain 1 — the pin's one home is the forward resolver.
+import { ENS_RESOLUTION_CHAIN_ID } from './ensForward';
 
 // Gated like the other services: a missing/blank address is a disabled
 // query (undefined, no RPC), distinct from an answered "no name" (null).
@@ -29,7 +28,7 @@ export async function fetchEnsName(
   try {
     // Both the reverse lookup and the forward verification reuse this one
     // mainnet client instance.
-    const client = await createRpcClient(ENS_CHAIN_ID);
+    const client = await createRpcClient(ENS_RESOLUTION_CHAIN_ID);
     const name = await client.getEnsName({ address: address as `0x${string}` });
     if (!name) return null;
     // Roundtrip check on the same client: forward-resolve the name and

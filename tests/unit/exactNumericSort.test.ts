@@ -13,7 +13,7 @@
 // rows, whose values cluster far above 2^53.
 
 import { describe, it, expect } from 'vitest';
-import { OptimizedSorter, type SortConfig } from '@/utils/sorting-optimization';
+import { multiKeySort, type SortConfig } from '@/utils/sorting-optimization';
 
 const DESC_VALUE: SortConfig[] = [{ key: 'value', direction: 'desc', type: 'numeric' }];
 
@@ -27,38 +27,33 @@ const LARGE = '10000000000000000050';
 
 describe('numeric sort over wei-scale values', () => {
   it('orders two wei amounts that are distinct but equal as doubles', () => {
-    const sorter = new OptimizedSorter();
     // Input order is the WRONG order for a descending sort.
     const rows: WeiRow[] = [
       { value: SMALL, id: 0 },
       { value: LARGE, id: 1 },
     ];
 
-    const { sortedData } = sorter.sort(rows, DESC_VALUE, { threshold: 1000 });
+    const { rows: sorted } = multiKeySort(rows, DESC_VALUE);
 
-    expect(sortedData[0].value).toBe(LARGE);
-    expect(sortedData[1].value).toBe(SMALL);
+    expect(sorted[0].value).toBe(LARGE);
+    expect(sorted[1].value).toBe(SMALL);
   });
 
   it('orders the same pair in ascending direction', () => {
-    const sorter = new OptimizedSorter();
     const rows: WeiRow[] = [
       { value: LARGE, id: 0 },
       { value: SMALL, id: 1 },
     ];
 
-    const { sortedData } = sorter.sort(
-      rows,
-      [{ key: 'value', direction: 'asc', type: 'numeric' }],
-      { threshold: 1000 },
-    );
+    const { rows: sorted } = multiKeySort(rows, [
+      { key: 'value', direction: 'asc', type: 'numeric' },
+    ]);
 
-    expect(sortedData[0].value).toBe(SMALL);
-    expect(sortedData[1].value).toBe(LARGE);
+    expect(sorted[0].value).toBe(SMALL);
+    expect(sorted[1].value).toBe(LARGE);
   });
 
   it('orders a realistic page of wei amounts exactly, not approximately', () => {
-    const sorter = new OptimizedSorter();
     // Values one wei apart across the 1e18 range: every adjacent pair is
     // a double-tie, so a float comparator preserves input order and a
     // correct one produces exact descending order.
@@ -67,30 +62,28 @@ describe('numeric sort over wei-scale values', () => {
       id: i,
     }));
 
-    const { sortedData } = sorter.sort(rows, DESC_VALUE, { threshold: 1000 });
+    const { rows: sorted } = multiKeySort(rows, DESC_VALUE);
 
     const expected = [...rows]
       .map(r => BigInt(r.value))
       .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
-    expect(sortedData.map(r => BigInt(r.value))).toEqual(expected);
+    expect(sorted.map(r => BigInt(r.value))).toEqual(expected);
   });
 
   it('still sorts ordinary small numbers correctly', () => {
-    const sorter = new OptimizedSorter();
     const rows = [{ value: '2' }, { value: '10' }, { value: '1' }];
 
-    const { sortedData } = sorter.sort(rows, DESC_VALUE, { threshold: 1000 });
+    const { rows: sorted } = multiKeySort(rows, DESC_VALUE);
 
     // Numeric, not lexicographic: 10 > 2.
-    expect(sortedData.map(r => r.value)).toEqual(['10', '2', '1']);
+    expect(sorted.map(r => r.value)).toEqual(['10', '2', '1']);
   });
 
   it('handles negative and fractional numeric values without breaking the order', () => {
-    const sorter = new OptimizedSorter();
     const rows = [{ value: '-5' }, { value: '2.5' }, { value: '0' }];
 
-    const { sortedData } = sorter.sort(rows, DESC_VALUE, { threshold: 1000 });
+    const { rows: sorted } = multiKeySort(rows, DESC_VALUE);
 
-    expect(sortedData.map(r => r.value)).toEqual(['2.5', '0', '-5']);
+    expect(sorted.map(r => r.value)).toEqual(['2.5', '0', '-5']);
   });
 });

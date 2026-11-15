@@ -28,6 +28,8 @@ import { withTimeout } from '@/utils/withTimeout';
 // Canonical record-shape guard (rejects arrays) and the record-shape
 // cause-chain walk (message + code per hop, traceFormat's one copy).
 import { isRecord } from '@/utils/isRecord';
+// The one quantity reader (bigint-exact) — shared with utils/traceFormat.
+import { parseQuantity } from '@/utils/strictInteger';
 import { errorChainText } from '@/utils/traceFormat';
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
 import { createPolledQueryHook, type PolledQueryResult } from './polledQuery';
@@ -91,31 +93,6 @@ export type PoolSnapshot = {
 /** Non-empty string → itself, anything else → null (honest absence). */
 const nonEmptyString = (raw: unknown): string | null =>
   typeof raw === 'string' && raw !== '' ? raw : null;
-
-/**
- * Hex quantity ("0x…"), decimal string, or JSON number → exact bigint.
- * Unparseable or negative values are nonsense here and read as null
- * (absent), never 0. Same contract as parseQuantity in utils/traceFormat.
- */
-const parseQuantity = (raw: unknown): bigint | null => {
-  if (typeof raw === 'bigint') return raw >= 0n ? raw : null;
-  if (typeof raw === 'number') {
-    // A JSON number past 2^53 was already rounded by JSON.parse and
-    // isInteger cannot detect it — a "confirmed" pending amount that
-    // differs from what the node reported is worse than no row. Safe
-    // integers stay accepted; everything larger is absent (null).
-    return Number.isSafeInteger(raw) && raw >= 0 ? BigInt(raw) : null;
-  }
-  if (typeof raw === 'string' && raw !== '') {
-    try {
-      const value = BigInt(raw);
-      return value >= 0n ? value : null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-};
 
 /** Inner map key ("42") → decimal number; non-decimal keys are not nonces. */
 const parseNonceKey = (key: string): number | null => {

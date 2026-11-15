@@ -158,8 +158,6 @@ export const indexedAddresses = duckdbTable(
     ...chainAddressColumns,
     type: varchar({ length: 20 }).notNull(), // 'EOA', 'contract'
     firstSeen: timestamp(),
-    lastActivity: timestamp(),
-    transactionCount: integer().default(0),
     indexedAt: datetime().default(sql`now()`),
   },
   table => [
@@ -182,12 +180,9 @@ export const contractSources = duckdbTable(
     runs: integer(),
     constructorArguments: hexData(),
     evmVersion: varchar({ length: 50 }),
-    library: text(),
-    licenseType: varchar({ length: 50 }),
     proxy: varchar({ length: 50 }),
     implementation: address(),
     implementationAddresses: text(), // JSON array of facet addresses (EIP-2535 diamonds)
-    swarmSource: varchar({ length: 100 }),
     isVerified: boolean().default(false),
     verificationSource: varchar({ length: 50 }),
     verificationDate: datetime().default(sql`now()`),

@@ -270,22 +270,30 @@ export class DuckDBPostgresAdapter {
             );
           }
 
-          if (await this.verifyMigrationTables(sql)) {
-            logger.info({ file, hash }, 'Migration already applied, skipping');
-            continue;
-          }
-
-          logger.info({ file }, 'Migration recorded but tables missing, re-applying');
-          await this.deleteMigrationRecord(migrationName);
+          // A recorded migration with a matching hash is applied — skip
+          // unconditionally. The previous "verify tables still exist, else
+          // re-apply" branch was unsound: migrations that DROP tables a
+          // LATER migration created (0017 dropped access_history etc.)
+          // made the verifier report "tables missing" on every boot after
+          // the drop applied, so each restart re-ran old migrations —
+          // recreating dropped tables, duplicating journal rows, and
+          // hard-failing on ALTER ... ADD COLUMN ("already exists"), which
+          // aborted the remaining chain mid-boot. That was the recurring
+          // "trashed journal / non-contiguous ids" incident of the
+          // 2026-11-13/14 waves (mis-attributed to concurrent writers).
+          // Half-applied migrations never get recorded (recording happens
+          // only after every statement succeeds), so resume replay is the
+          // unrecorded path below and needs no verification here.
+          logger.info({ file, hash }, 'Migration already applied, skipping');
+          continue;
         }
 
         const statements = this.parseMigration(sql);
         logger.info({ file, statements: statements.length }, 'Running migration');
 
-        const isReapply = !!existingRecord;
         for (const statement of statements) {
           if (statement.trim()) {
-            await this.runMigrationStatement(statement, isReapply);
+            await this.runMigrationStatement(statement);
           }
         }
 
@@ -328,18 +336,6 @@ export class DuckDBPostgresAdapter {
       return rows.length > 0
         ? { name: rows[0].name as string, hash: rows[0].hash as string }
         : null;
-    } finally {
-      conn.disconnectSync();
-    }
-  }
-
-  private async deleteMigrationRecord(migrationName: string): Promise<void> {
-    if (!this.instance) return;
-    const conn = await this.instance.connect();
-    try {
-      await conn.run('DELETE FROM "drizzle"."__drizzle_migrations" WHERE name = $1', [
-        migrationName,
-      ]);
     } finally {
       conn.disconnectSync();
     }
@@ -429,18 +425,31 @@ export class DuckDBPostgresAdapter {
   // fresh database concurrently (the documented vite-bridge + standalone
   // server dev topology): the per-process isMigrating flag cannot help, so
   // the loser of a CREATE TABLE race sees a catalog 'already exists' error.
-  // Tolerate exactly that duplicate class — and only when the table is
-  // verifiably present afterwards — then rethrow everything else unchanged.
-  private async runMigrationStatement(statement: string, isReapply: boolean): Promise<void> {
+  // The same tolerance covers the resume replay of an UNRECORDED half-applied
+  // migration (recording happens only after every statement succeeds, so a
+  // crash mid-migration replays it from statement one): statements whose
+  // object provably exists already are skipped — CREATE TABLE (table exists)
+  // and ALTER TABLE ... ADD COLUMN (column exists). Everything else rethrows
+  // unchanged.
+  private async runMigrationStatement(statement: string): Promise<void> {
     const isCreateTable = /^\s*CREATE\s+TABLE/i.test(statement);
+    const isAddColumn =
+      /^\s*ALTER\s+TABLE/i.test(statement) && /\bADD\s+COLUMN\b/i.test(statement);
     try {
-      await this.executeStatement(statement, isReapply && isCreateTable);
+      await this.executeStatement(statement);
     } catch (error) {
-      if (isCreateTable && isDuplicateClassError(error)) {
-        if (await this.verifyMigrationTables(statement)) {
+      if (isDuplicateClassError(error)) {
+        if (isCreateTable && (await this.verifyMigrationTables(statement))) {
           logger.info(
             { statement: statement.slice(0, 80) },
             'Migration table already created by concurrent process, skipping',
+          );
+          return;
+        }
+        if (isAddColumn && (await this.verifyMigrationColumn(statement))) {
+          logger.info(
+            { statement: statement.slice(0, 80) },
+            'Migration column already added, skipping',
           );
           return;
         }
@@ -449,18 +458,37 @@ export class DuckDBPostgresAdapter {
     }
   }
 
-  private async executeStatement(statement: string, ignoreIfExists = false): Promise<void> {
+  private async executeStatement(statement: string): Promise<void> {
     if (!this.instance) return;
     const conn = await this.instance.connect();
     try {
       await conn.run(statement);
     } catch (error) {
-      const message = (error as Error).message;
-      if (ignoreIfExists && /already exists|already have/i.test(message)) {
-        return;
-      }
       logger.error({ err: error, statement }, 'Migration statement failed');
       throw error;
+    } finally {
+      conn.disconnectSync();
+    }
+  }
+
+  /** True when the column the statement adds already exists in its table. */
+  private async verifyMigrationColumn(statement: string): Promise<boolean> {
+    if (!this.instance) return false;
+    const match = statement.match(
+      /^\s*ALTER\s+TABLE\s+["`]?(\w+)["`]?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?/i,
+    );
+    if (!match) return false;
+    const [, tableName, columnName] = match;
+    const conn = await this.instance.connect();
+    try {
+      const result = await conn.runAndReadAll(
+        'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
+        [tableName],
+      );
+      const existing = new Set(
+        result.getRowObjects().map((r: Record<string, unknown>) => r.column_name as string),
+      );
+      return existing.has(columnName.toLowerCase());
     } finally {
       conn.disconnectSync();
     }

@@ -31,6 +31,12 @@ import {
 } from './providerCeilings';
 // Shared-cursor bounded pool (import-free leaf) for the parallel fan-outs.
 import { runBoundedPool } from '../utils/boundedPool';
+// Shared startup-reconciliation staleness window + resume-hint message
+// (utils/interruptedRow) — the one home for both.
+import {
+  INTERRUPTED_BY_RESTART_MESSAGE,
+  INTERRUPTED_ROW_STALE_MS,
+} from '../utils/interruptedRow';
 
 const logger = createLogger('event-indexing-service');
 
@@ -1574,8 +1580,7 @@ export const updateRangeStatus = async (
 // at least once per batch, so a fresh updated_at means "probably still
 // walking". A NULL updated_at (legacy rows) cannot be proven fresh and is
 // treated as stale. AddressScanService.reconcileInterruptedAddressScans
-// applies the same rule with the same threshold.
-const INTERRUPTED_ROW_STALE_MS = 2 * 60 * 1000;
+// applies the same shared rule and message (utils/interruptedRow).
 
 // The same startup hook also runs the reorg reconciliation sweep: unfinalized
 // rows below the finalized head get receipt-verified, promoted, or deleted
@@ -1586,7 +1591,7 @@ export const reconcileInterruptedRanges = async (): Promise<void> => {
     .update(indexingRanges)
     .set({
       status: 'error',
-      errorMessage: 'Interrupted by server restart — resume to continue',
+      errorMessage: INTERRUPTED_BY_RESTART_MESSAGE,
       updatedAt: new Date(),
     })
     .where(

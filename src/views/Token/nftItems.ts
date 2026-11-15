@@ -12,7 +12,7 @@
 // every aggregate reflects the scanned window only. BigInt-exact
 // throughout; values past 2^53 stay exact.
 import type { TokenTransfer } from '@/services/tokenTransfers';
-import { parseDecimalInteger } from '@/views/Address/holdings';
+import { parseDecimalBigInt } from '@/utils/strictInteger';
 
 // Mint/burn sentinel (same constant as tokenMath/tokenOverview): the
 // zero address participates in supply changes but holds nothing.
@@ -99,7 +99,7 @@ export function deriveNftItems(
         // amount, so batch amounts have no fallback.
         const raw =
           transfer.standard === 'erc1155-single' ? (amounts[i] ?? transfer.value) : amounts[i];
-        const amount = parseDecimalInteger(raw ?? '');
+        const amount = parseDecimalBigInt(raw ?? '');
         if (amount === null) continue; // malformed pair: contributes nothing
         const item = itemFor('erc1155', ids[i]);
         if (item !== null) item.amount += sign * amount;
@@ -112,7 +112,7 @@ export function deriveNftItems(
     // yield nothing — guessing an item from an ambiguous row would
     // fabricate it.
     if (transfer.logStandard === 'erc721') {
-      const tokenId = parseDecimalInteger(transfer.value);
+      const tokenId = parseDecimalBigInt(transfer.value);
       if (tokenId !== null) itemFor('erc721', tokenId.toString());
     }
   }

@@ -454,27 +454,6 @@ export function NotATokenContractState({
   );
 }
 
-/**
- * Small affordance for the ADDRESS page's Token Overview card: a link to
- * this page. Exported so Main can wire it next to the classification
- * badge without this module owning any Address-page file.
- */
-export function TokenOverviewCardLink({
-  chainId,
-  address,
-  className,
-}: {
-  chainId: number;
-  address: string;
-  className?: string;
-}) {
-  return (
-    <TypedLink to={`/chain/${chainId}/token/${address}`} className={cx(linkStyle, className)}>
-      View token page →
-    </TypedLink>
-  );
-}
-
 // Shared page chrome for the guard states below (nav, header).
 function TokenPageShell({
   chainId,

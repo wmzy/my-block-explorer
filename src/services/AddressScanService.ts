@@ -97,6 +97,12 @@ import {
 } from '../utils/traceFormat';
 // Shared-cursor bounded pool (import-free leaf) for the trace fan-out.
 import { runBoundedPool } from '../utils/boundedPool';
+// Shared startup-reconciliation staleness window + resume-hint message
+// (utils/interruptedRow) — the one home for both.
+import {
+  INTERRUPTED_BY_RESTART_MESSAGE,
+  INTERRUPTED_ROW_STALE_MS,
+} from '../utils/interruptedRow';
 import type { Address, PublicClient } from 'viem';
 
 const logger = createLogger('address-scan-service');
@@ -1485,23 +1491,22 @@ export const deleteScanJob = async (chainId: number, address: string): Promise<v
  * construction. Startup wiring lives in api-app.ts.
  *
  * STALENESS: only rows whose last checkpoint write is older than
- * INTERRUPTED_ROW_STALE_MS flip (same rule/threshold as
- * reconcileInterruptedRanges). A blanket flip would break the documented
+ * INTERRUPTED_ROW_STALE_MS flip (shared with
+ * reconcileInterruptedRanges — see utils/interruptedRow). A blanket
+ * flip would break the documented
  * dual-process dev topology (vite bridge + standalone server share the
  * DB): process B would error a scan process A is actively walking — a
  * resume in B then runs a second loop over the same address. A live walk
  * checkpoints after every segment, so a fresh updated_at means "probably
  * still walking".
  */
-const INTERRUPTED_ROW_STALE_MS = 2 * 60 * 1000;
-
 export const reconcileInterruptedAddressScans = async (): Promise<void> => {
   const staleBefore = new Date(Date.now() - INTERRUPTED_ROW_STALE_MS);
   await db
     .update(addressScanJobs)
     .set({
       status: 'error',
-      errorMessage: 'Interrupted by server restart — resume to continue',
+      errorMessage: INTERRUPTED_BY_RESTART_MESSAGE,
       updatedAt: new Date(),
     })
     .where(and(eq(addressScanJobs.status, 'running'), lt(addressScanJobs.updatedAt, staleBefore)));

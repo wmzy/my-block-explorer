@@ -29,6 +29,8 @@ import { flattenErrorMessage } from '@/utils/errorHandler';
 import { MS_PER_DAY } from '@/utils/time';
 
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
+// The gwei divisor's one home (util/units, beside its BigInt twin).
+import { GWEI } from '@/util/units';
 
 import { createPolledQueryHook, type PolledQueryResult } from './polledQuery';
 
@@ -69,8 +71,6 @@ const TX_SAMPLE_CONCURRENCY = 4;
 // A settled snapshot is immutable for the rest of the UTC day, so a poll
 // cadence only re-checks the day cache (plus retries unsettled failures).
 const CHARTS_POLL_INTERVAL = 60_000;
-
-const GWEI = 1_000_000_000;
 
 // --- types ---
 

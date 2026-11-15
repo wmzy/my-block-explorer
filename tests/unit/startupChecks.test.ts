@@ -157,7 +157,7 @@ describe('runStartupSecurityChecks', () => {
     expect(message).toContain('ALLOW_INSECURE_START=1');
   });
 
-  it('warns with the exposed write endpoints on a public bind without a token', () => {
+  it('warns about every ungated mutating route on a public bind without a token', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
 
@@ -168,8 +168,11 @@ describe('runStartupSecurityChecks', () => {
     const message = warn.mock.calls.flat().join(' ');
     expect(message).toContain('SECURITY WARNING');
     expect(message).toContain('ADMIN_TOKEN is not configured');
-    expect(message).toContain('POST   /api/rpc-configs');
-    expect(message).toContain('events/ranges*');
+    expect(message).toContain('every mutating route is UNGATED');
+    // The only fail-closed exceptions, called out so the generic claim is
+    // anchored to the two raw-SQL surfaces that stay gated.
+    expect(message).toContain('/api/sql');
+    expect(message).toContain('/api/ops/uninstall');
   });
 
   it('stays silent on the default loopback bind', () => {

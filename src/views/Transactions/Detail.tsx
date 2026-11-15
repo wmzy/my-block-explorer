@@ -6,7 +6,7 @@ import { decodeEventLog, type Abi, type Hex } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
 import { CallTraceCard } from '@/views/Transactions/CallTrace';
-import { ProtocolRouterChip } from '@/views/Transactions/methodColumn';
+import { ProtocolRouterChip, truncatedAddress } from '@/views/Transactions/methodColumn';
 import { RawDataBlock } from '@/components/transactions/RawDataBlock';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -901,9 +901,6 @@ const transferKindLabel: Record<DecodedTokenTransfer['kind'], string> = {
   erc1155_batch: 'ERC-1155',
 };
 
-const TRUNCATED_ADDRESS = (address: string): string =>
-  `${address.slice(0, 8)}…${address.slice(-6)}`;
-
 // Human-readable transfer amount per standard. ERC-20 needs decimals from
 // the token's metadata; until that lands (or when it is honestly
 // unavailable) the raw base-unit integer is shown rather than a guessed
@@ -998,7 +995,7 @@ function TokenTransfersCard({
               </Badge>
               <CopyableHash
                 value={transfer.from}
-                truncated={TRUNCATED_ADDRESS(transfer.from)}
+                truncated={truncatedAddress(transfer.from)}
                 href={`/chain/${chainId}/address/${transfer.from}`}
               />
               <span className={transferArrowStyle} aria-hidden="true">
@@ -1006,7 +1003,7 @@ function TokenTransfersCard({
               </span>
               <CopyableHash
                 value={transfer.to}
-                truncated={TRUNCATED_ADDRESS(transfer.to)}
+                truncated={truncatedAddress(transfer.to)}
                 href={`/chain/${chainId}/address/${transfer.to}`}
               />
               <TransferAmount
@@ -1018,7 +1015,7 @@ function TokenTransfersCard({
                 {'Token: '}
                 <CopyableHash
                   value={transfer.token}
-                  truncated={TRUNCATED_ADDRESS(transfer.token)}
+                  truncated={truncatedAddress(transfer.token)}
                   href={`/chain/${chainId}/contract/${transfer.token}`}
                 />
               </span>
@@ -1057,7 +1054,7 @@ function AuthorizationsCard({
                 <InfoItem label="Authority">
                   <CopyableHash
                     value={authorization.authority}
-                    truncated={TRUNCATED_ADDRESS(authorization.authority)}
+                    truncated={truncatedAddress(authorization.authority)}
                     href={`/chain/${chainId}/address/${authorization.authority}`}
                   />
                 </InfoItem>
@@ -1069,7 +1066,7 @@ function AuthorizationsCard({
               <InfoItem label="Delegates To">
                 <CopyableHash
                   value={authorization.address}
-                  truncated={TRUNCATED_ADDRESS(authorization.address)}
+                  truncated={truncatedAddress(authorization.address)}
                   href={`/chain/${chainId}/contract/${authorization.address}`}
                 />
               </InfoItem>

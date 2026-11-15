@@ -7,7 +7,7 @@ import { CopyableHash } from '@/components/ui/CopyableHash';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
 import { fetchCallTraceTree } from '@/utils/callTraceRpc';
-import { formatNumber, formatValue } from '@/utils/format';
+import { formatNumber, formatPercentage, formatValue } from '@/utils/format';
 import { useLazyExpand } from '@/util/useLazyExpand';
 import {
   countFailedCalls,
@@ -16,13 +16,12 @@ import {
   maxDepth,
   type CallTraceNode,
 } from '@/utils/traceFormat';
+// The family's shared address truncation (methodColumn is its one home).
+import { truncatedAddress } from '@/views/Transactions/methodColumn';
 
 // Init code's first 4 bytes are NOT a function selector — CREATE-family
 // frames skip the selector chip even though normalization kept one.
 const CREATE_FAMILY = new Set(['CREATE', 'CREATE2', 'SELFDESTRUCT']);
-
-const TRUNCATED_ADDRESS = (address: string): string =>
-  `${address.slice(0, 8)}…${address.slice(-6)}`;
 
 // The clickable header row: full-width toggle with the Collapsible card's
 // affordances (role=button, keyboard, rotating chevron). Built on Card
@@ -117,11 +116,13 @@ const traceErrorStyle = css`
 `;
 
 // Gas share of the tx's total gasUsed; the tx's own figure, so the root
-// frame of a fully-consumed tx reads 100% — not a bug, a ratio.
+// frame of a fully-consumed tx reads 100% — not a bug, a ratio. A zero
+// denominator hides the share entirely, and formatPercentage degrades a
+// non-finite ratio to '—' instead of printing "Infinity%".
 const gasShareLabel = (nodeGasUsed: bigint, txGasUsed: bigint): string => {
   if (txGasUsed === 0n) return '';
   const percent = (Number(nodeGasUsed) / Number(txGasUsed)) * 100;
-  return `${percent.toFixed(1)}%`;
+  return formatPercentage(percent, 1);
 };
 
 function TraceNodeRow({
@@ -150,7 +151,7 @@ function TraceNodeRow({
         {node.depth === 0 && node.from !== null && (
           <CopyableHash
             value={node.from}
-            truncated={TRUNCATED_ADDRESS(node.from)}
+            truncated={truncatedAddress(node.from)}
             href={`/chain/${chainId}/address/${node.from}`}
           />
         )}
@@ -160,7 +161,7 @@ function TraceNodeRow({
         {node.to !== null ? (
           <CopyableHash
             value={node.to}
-            truncated={TRUNCATED_ADDRESS(node.to)}
+            truncated={truncatedAddress(node.to)}
             href={`/chain/${chainId}/address/${node.to}`}
           />
         ) : (
