@@ -9,6 +9,51 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-16 duplication review fix wave round 12 (4 read-only scouts +
+  Main-sequenced fixes)** — 11 findings adjudicated (8 fixed, 3 no-payoff
+  skipped); the surface is near-exhausted: every round-6–11 canonical is
+  fully adopted (scouts verified importer counts in both directions).
+  All verified: tsc 0 errors, eslint 0 errors, `vitest --changed
+  --maxWorkers=4` green, `pnpm build` green. **Docs-truth (P2)** —
+  `db:migrate`/`db:push`/`db:studio` were documented in 5 places but
+  NEVER worked: drizzle.config.ts's `connectionString` line had been
+  swallowed by a comment (and the file carried Chinese comments, violating
+  the project standard); Drizzle Kit cannot connect to DuckDB and the
+  official migrator would write journal rows the boot-time runner can't
+  match. The three scripts are deleted from package.json (only
+  `db:generate` — snapshot diffing, no connection — survives) and
+  README/INSTALLATION/CONTRIBUTING/CLAUDE/AGENTS now state the truth:
+  migrations apply at server boot; inspect via the /sql console or DuckDB
+  CLI. INSTALLATION's stale per-chain-DB "Data management" section is
+  rewritten for the single-main-DB reality. **Consistency** — events.ts's
+  three range-write handlers (POST ranges, POST quick, PATCH :rangeId)
+  parsed bodies inline inside their 500-catch: malformed JSON answered
+  `500 internal_error` (+ a false alarm log) while every other JSON write
+  route answered `400 invalid_json`; all three now hoist `readJsonBody`
+  above the try (contracts.ts pattern), regression-pinned in
+  eventsRoutesErrorBodies. The pass-through wire shapes the old `any`
+  implied are written down (`RangeWriteBody`/`QuickRangeBody`); the
+  blockCount guard-proven narrowing uses one documented `!`. **New
+  canonicals** — `views/chainNav.ts useChainlessNav()` (the chain-less
+  nav shell ×6: Ops/Sql/Tools/Signatures/Help/HelpPage — Search keeps its
+  bespoke handler, it re-runs the query on chain switch); `clampWindowBlocks`
+  in utils/scanLadder (byte-equal window clamp ×2,
+  TokenTransfer/ApprovalScan); `views/Help/helpStyles.ts`
+  (sectionCard/proseParagraph/proseLink twins ×2). **Dead weight** —
+  eslint.config.mjs's duplicate `no-non-null-assertion` key ('error' then
+  'off' — last-wins made 'off' effective; kept 'off' with a rationale
+  comment); uninstall.ts's zero-importer `DEFAULT_PROBE_PORTS` re-export;
+  Ops.tsx's `opsAdminGateFromError` alias (test migrated to import
+  `util/adminGate` directly — ScoutShared's "zero importers" claim was
+  WRONG, the test file imported it: re-verification before dispatch
+  caught it); `formatSelectorForDisplay` (a `?? ''` wrapper with one call
+  site + own test describe — inlined); mcp/abi.ts's local copy of
+  `ARRAY_SUFFIX_PATTERN` → imports paramParsing's canonical. **Scout
+  claims re-verified before dispatch (round-7 rule)**: 1 of 4 scouts'
+  zero-importer claims was wrong; 1 P2's "byte-equal css" needed manual
+  care (a fuzzy edit initially merged two distinct HelpPage styles —
+  whereStyle restored). Deferred (standing list unchanged).
+
 - **2026-11-16 duplication review fix wave round 11 (4 read-only scouts +
   2 fix agents + integration)** — the leanest round yet: 10 findings
   adjudicated (7 fixed, 1 rejected on re-verification, 2 deliberate).

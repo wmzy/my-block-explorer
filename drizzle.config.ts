@@ -1,14 +1,17 @@
 import type { Config } from 'drizzle-kit';
 
+// Schema-generation config only: `pnpm db:generate` diffs this schema
+// against the snapshot in ./drizzle and writes migration files. Drizzle Kit
+// cannot connect to DuckDB (the adapter in src/database/ is the bridge the
+// app uses, Kit is not), and migrations are APPLIED at server boot by the
+// adapter's own runner (`duckdb-postgres-adapter.ts` `migrate()`), never by
+// `drizzle-kit migrate` — the official migrator writes journal rows the
+// runtime runner cannot match.
 export default {
   schema: './src/database/schema.ts',
   out: './drizzle',
-  dialect: 'postgresql', // 使用 PostgreSQL 语法（我们的适配器兼容）
+  dialect: 'postgresql', // PostgreSQL syntax — the adapter maps it onto DuckDB
   casing: 'snake_case',
-  // 注意：Drizzle Kit 无法直接连接到我们的 DuckDB 适配器
-  // 这个配置主要用于 schema 生成和 SQL 语法
-  // 实际的数据库连接在应用程序中通过我们的适配器处理connectionString: process.env.DATABASE_URL || "duckdb://data/blockchain.db",
-  // 实际的数据库连接在应用程序中通过我们的适配器处理
   verbose: true,
   strict: true,
 } satisfies Config;

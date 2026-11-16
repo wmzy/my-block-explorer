@@ -5,7 +5,7 @@ import { numberToHex, parseEther, type Abi, type StateOverride as ViemStateOverr
 import { getChainInfo, getChainName, getChainSymbol, getDefaultRpcUrl } from '@/config/chains';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { CopyableHash } from '@/components/ui/CopyableHash';
-import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
+import { getFunctionSelector } from '@/utils/functionSelector';
 import { buildCastCommand } from '@/utils/castCommand';
 import { buildViemScript } from '@/utils/viemScript';
 import { useCopyFeedback } from '@/util/useCopyFeedback';
@@ -401,7 +401,8 @@ export function FunctionCallForm({
   }, [initialArgsKey]);
 
   const selector = getFunctionSelector(func);
-  const selectorDisplay = formatSelectorForDisplay(selector);
+  // Null selector (unparseable signature) renders as no selector chip.
+  const selectorDisplay = selector ?? '';
 
   // The payable value field is denominated in the chain's native currency —
   // 'ETH' only makes sense on Ethereum.

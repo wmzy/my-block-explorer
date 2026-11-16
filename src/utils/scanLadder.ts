@@ -30,6 +30,17 @@ export const DEFAULT_MAX_SCAN_CALLS = 40;
 export const DEFAULT_SCAN_TIMEOUT_MS = 25_000;
 export const SCAN_TIMEOUT_GRACE_MS = 5_000;
 
+/**
+ * The window policy both scans share: an explicit `?window=` override
+ * truncates to an integer and clamps into [MIN, MAX]; undefined uses the
+ * default. Lives here (not in either service) so the clamp and the
+ * constants it reads can never drift apart.
+ */
+export const clampWindowBlocks = (windowBlocks: number | undefined): number =>
+  windowBlocks === undefined
+    ? DEFAULT_WINDOW_BLOCKS
+    : Math.min(Math.max(Math.trunc(windowBlocks), MIN_WINDOW_BLOCKS), MAX_WINDOW_BLOCKS);
+
 // Ceiling memory for the ladder: the highest chunk size this provider is
 // known to REJECT (range caps). Growth after a clean chunk stays below
 // it, so a capped provider does not oscillate

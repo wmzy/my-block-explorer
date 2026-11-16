@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ContractFunction } from '@/utils/contractInteraction';
-import { formatSelectorForDisplay, getFunctionSelector } from '@/utils/functionSelector';
+import { getFunctionSelector } from '@/utils/functionSelector';
 
 describe('functionSelector', () => {
   // Signature building is pinned transitively: getFunctionSelector hashes
@@ -64,20 +64,6 @@ describe('functionSelector', () => {
         inputs: [{ name: 'account', type: 'address' }],
       } as ContractFunction;
       expect(getFunctionSelector(func)).toBeNull();
-    });
-  });
-
-  describe('formatSelectorForDisplay', () => {
-    it('returns full selector when provided', () => {
-      expect(formatSelectorForDisplay('0x70a08231')).toBe('0x70a08231');
-    });
-
-    it('returns empty string when null', () => {
-      expect(formatSelectorForDisplay(null)).toBe('');
-    });
-
-    it('returns full selector for any valid hex', () => {
-      expect(formatSelectorForDisplay('0xa9059cbb')).toBe('0xa9059cbb');
     });
   });
 });

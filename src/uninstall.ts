@@ -79,10 +79,8 @@ export type UninstallResult = {
 /**
  * Ports the frontend's auto-discovery scans — where our server lives.
  * One home (config/discovery.ts, an import-free leaf) shared with the
- * browser hook; re-exported here because the CLI's server-running guard
- * consumes the same list.
+ * browser hook; the CLI's server-running guard consumes the same list.
  */
-export { DEFAULT_PROBE_PORTS };
 
 /** Probe ports + the PORT env override, de-duplicated, ascending. */
 export function defaultProbePorts(envPort: string | undefined): number[] {

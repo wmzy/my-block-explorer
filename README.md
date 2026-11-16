@@ -164,10 +164,13 @@ notes (`ADMIN_TOKEN`, never `ENABLE_DEBUG_API` on shared hosts):
 ### Database migrations
 
 ```bash
-pnpm db:generate   # generate Drizzle migrations
-pnpm db:migrate    # apply them
-pnpm db:studio     # Drizzle Studio
+pnpm db:generate   # generate Drizzle migration files (schema → ./drizzle)
 ```
+
+Migrations are **applied automatically at server boot** by the DuckDB
+adapter's runner (`src/database/duckdb-postgres-adapter.ts`) — there is no
+`db:migrate` step, and Drizzle Kit itself cannot connect to DuckDB. Inspect
+data with the in-app SQL console (`/sql`) or the DuckDB CLI.
 
 ### Tests / quality
 

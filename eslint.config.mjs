@@ -56,12 +56,12 @@ export default [
       ],
       // Allow any in test files and for specific internal patterns
       '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-non-null-assertion': 'error',
+      // Non-null assertions are permitted: viem/drizzle generics legitimately
+      // need them where types are structurally correct but not provable.
+      '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/prefer-nullish-coalescing': 'error',
       '@typescript-eslint/prefer-optional-chain': 'error',
       '@typescript-eslint/no-unnecessary-type-assertion': 'error',
-
-      '@typescript-eslint/no-non-null-assertion': 'off',
 
       // General code quality rules
       'no-console': ['warn', { allow: ['warn', 'error'] }],

@@ -10,13 +10,12 @@
 // Nothing here fetches: it is copy plus a pure model
 // (./helpContent), so it also works with the backend offline.
 import { css } from '@linaria/core';
-import { TypedLink, useRouter } from '@native-router/react';
+import { TypedLink } from '@native-router/react';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
-import { readRememberedChainId } from '@/views/Home/Landing';
-import { chainRedirect } from '@/views/chainNav';
+import { useChainlessNav } from '@/views/chainNav';
 import {
   FAQ,
   GLOSSARY,
@@ -25,10 +24,7 @@ import {
   HELP_TOPICS,
   KEYBOARD_SHORTCUTS,
 } from './helpContent';
-
-const sectionCardStyle = css`
-  margin-bottom: var(--haze-space-6);
-`;
+import { sectionCardStyle, proseParagraph, proseLink } from './helpStyles';
 
 // The topic grid is a <ul> (a list of cards is the honest markup), so
 // the UA's default 40px left padding and bullets are reset here —
@@ -150,25 +146,6 @@ const answerStyle = css`
   }
 `;
 
-const paragraphStyle = css`
-  margin: var(--haze-space-3) 0 0;
-  color: var(--haze-color-text-secondary);
-  line-height: var(--haze-leading-relaxed);
-
-  &:first-of-type {
-    margin-top: 0;
-  }
-`;
-
-const linkStyle = css`
-  color: var(--haze-color-primary);
-  text-decoration: none;
-
-  &:hover {
-    text-decoration: underline;
-  }
-`;
-
 const pointerList = css`
   margin: var(--haze-space-5) 0 0;
   padding: 0;
@@ -179,12 +156,10 @@ const pointerList = css`
 `;
 
 export default function Help() {
-  const router = useRouter();
   // The help section is chain-agnostic; the topbar it renders is not, so
-  // it follows the remembered chain (the same fallback as the other
-  // chain-less pages) and a chain switch lands on that chain's home.
-  const navChainId = readRememberedChainId() ?? 1;
-  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
+  // it follows the remembered chain (hook home: views/chainNav.ts
+  // useChainlessNav) and a chain switch lands on that chain's home.
+  const { navChainId, handleNavChainChange } = useChainlessNav();
 
   return (
     <>
@@ -195,7 +170,7 @@ export default function Help() {
         <Card className={sectionCardStyle}>
           <CardContent>
             <CardTitle as="h2">Topics</CardTitle>
-            <p className={paragraphStyle}>
+            <p className={proseParagraph}>
               Each topic is its own page, so a specific answer can be linked on its own. Start at the
               one that matches the question you arrived with.
             </p>
@@ -207,8 +182,8 @@ export default function Help() {
                       <CardTitle>{topic.title}</CardTitle>
                     </CardHeader>
                     <CardContent className={topicBody}>
-                      <p className={paragraphStyle}>{topic.summary}</p>
-                      <p className={paragraphStyle}>
+                      <p className={proseParagraph}>{topic.summary}</p>
+                      <p className={proseParagraph}>
                         <TypedLink to={`/help/${topic.slug}`} className={topicLink}>
                           Read &rarr;
                         </TypedLink>
@@ -232,9 +207,9 @@ export default function Help() {
                 </li>
               ))}
             </ul>
-            <p className={paragraphStyle}>
+            <p className={proseParagraph}>
               The command palette is hidden on narrow screens. The{' '}
-              <TypedLink to="/tools" className={linkStyle}>
+              <TypedLink to="/tools" className={proseLink}>
                 Tools page
               </TypedLink>{' '}
               lists the same destinations as cards you can tap.
@@ -279,14 +254,14 @@ export default function Help() {
             <CardTitle as="h2">Two explainers that live elsewhere</CardTitle>
             <ul className={pointerList}>
               <li className={answerStyle}>
-                <TypedLink to="/about/coverage" className={linkStyle}>
+                <TypedLink to="/about/coverage" className={proseLink}>
                   Data coverage
                 </TypedLink>{' '}
                 &mdash; what each coverage badge level means, and why a number here can be smaller
                 than a full indexer&rsquo;s.
               </li>
               <li className={answerStyle}>
-                <TypedLink to="/tools" className={linkStyle}>
+                <TypedLink to="/tools" className={proseLink}>
                   Tools
                 </TypedLink>{' '}
                 &mdash; every tool in one page: chain pages, search, signatures, the SQL console, Ops

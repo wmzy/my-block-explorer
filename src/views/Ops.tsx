@@ -15,7 +15,7 @@
 // The react-toolroom cache holds errors, so the page-level failure states
 // (backend offline, admin gate, rate limit) carry retry affordances too.
 import { css, cx } from '@linaria/core';
-import { useRouter } from '@native-router/react';
+import { useChainlessNav } from '@/views/chainNav';
 import { Alert, Dialog, useToast } from 'haze-ui';
 import { useControl } from 'react-use-control';
 import { useState } from 'react';
@@ -26,8 +26,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { DataTable } from '@/components/ui/DataTable';
 import { BackendOfflineState } from '@/components/ui/ErrorState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
-import { readRememberedChainId } from '@/views/Home/Landing';
-import { chainRedirect } from '@/views/chainNav';
 import { useOpsSummary, type OpsMeta, type OpsSummary } from '@/services/opsSummary';
 import {
   UNINSTALL_CONFIRM_PHRASE,
@@ -55,9 +53,7 @@ import { formatDuration, formatFileSize, formatNumber } from '@/utils/format';
 export type OpsAdminGate = 'unconfigured' | 'unauthorized';
 
 // The classification itself is the shared leaf (util/adminGate.ts) both
-// admin surfaces use; this historical name remains the view tests'
-// import point.
-export const opsAdminGateFromError = adminGateFromError;
+// admin surfaces use.
 
 // --- Pure display helpers (exported for the view tests) ---
 
@@ -852,12 +848,10 @@ function UninstallCard() {
 }
 
 export default function Ops() {
-  const router = useRouter();
-  // Not chain-scoped, but the topbar still is (its links and search route
-  // into /chain/:chainId pages): the remembered chain provides that context,
-  // same fallback order as the other chain-less pages (SQL console, Search).
-  const navChainId = readRememberedChainId() ?? 1;
-  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
+  // Chain-less page: the topbar follows the remembered chain (hook home:
+  // views/chainNav.ts useChainlessNav, shared with the SQL console, Tools,
+  // Signatures and Help).
+  const { navChainId, handleNavChainChange } = useChainlessNav();
 
   const summary = useOpsSummary();
   const retry = () => void summary.refetch();

@@ -9,7 +9,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom/vitest';
-import Ops, { formatChainLabel, formatStatusCounts, opsAdminGateFromError } from '@/views/Ops';
+import Ops, { formatChainLabel, formatStatusCounts } from '@/views/Ops';
+import { adminGateFromError } from '@/util/adminGate';
 import { ApiError } from '@/util/apiError';
 import type { OpsSummary } from '@/services/opsSummary';
 
@@ -326,18 +327,18 @@ describe('pure display helpers', () => {
     expect(formatChainLabel('backups-2026', null)).toBe('backups-2026');
   });
 
-  it('opsAdminGateFromError classifies the two 403 faces and nothing else', () => {
+  it('adminGateFromError classifies the two 403 faces and nothing else', () => {
     expect(
-      opsAdminGateFromError(
+      adminGateFromError(
         new ApiError(
           'Admin operations are disabled. Set ADMIN_TOKEN on the server to enable them.',
           403,
         ),
       ),
     ).toBe('unconfigured');
-    expect(opsAdminGateFromError(new ApiError('Invalid admin token.', 403))).toBe('unauthorized');
-    expect(opsAdminGateFromError(new ApiError('Invalid admin token.', 401))).toBeNull();
-    expect(opsAdminGateFromError(new Error('Invalid admin token.'))).toBeNull();
+    expect(adminGateFromError(new ApiError('Invalid admin token.', 403))).toBe('unauthorized');
+    expect(adminGateFromError(new ApiError('Invalid admin token.', 401))).toBeNull();
+    expect(adminGateFromError(new Error('Invalid admin token.'))).toBeNull();
   });
 });
 

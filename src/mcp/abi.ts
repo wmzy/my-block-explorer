@@ -13,6 +13,7 @@
 import { parseAbiItem, type AbiFunction, type AbiParameter } from 'viem';
 import { errorMessage } from '@/utils/errorHandler';
 import { HEX_ADDRESS_RE } from '@/utils/address';
+import { ARRAY_SUFFIX_PATTERN } from '@/utils/paramParsing';
 
 export class McpArgError extends Error {
   constructor(message: string) {
@@ -65,8 +66,10 @@ export function coerceArgs(args: readonly unknown[], fragment: AbiFunction): unk
 
 function coerceArg(value: unknown, input: AbiParameter, path: string): unknown {
   const type = input.type;
-  // Array types (fixed `T[k]` and dynamic `T[]`), possibly nested.
-  const arrayMatch = /^(.*)\[(\d*)\]$/.exec(type);
+  // Array types (fixed `T[k]` and dynamic `T[]`), possibly nested — the
+  // canonical suffix pattern from paramParsing (same shape the Interact
+  // form's parser and the copy-out builders peel).
+  const arrayMatch = ARRAY_SUFFIX_PATTERN.exec(type);
   if (arrayMatch !== null) {
     const elementType = arrayMatch[1];
     if (!Array.isArray(value)) {

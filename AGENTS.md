@@ -197,9 +197,7 @@ pnpm build:client        # Vite build + SPA _redirects
 pnpm build:server        # tsup compilation
 
 # Database
-pnpm db:generate         # Generate migrations
-pnpm db:migrate          # Apply migrations
-pnpm db:studio           # Drizzle Studio
+pnpm db:generate         # Generate migration files (applied at boot by the adapter)
 
 # Testing
 pnpm test                # Vitest all
@@ -2402,3 +2400,56 @@ pnpm typecheck           # tsc --noEmit
   essentially clean (scouts' canonical-importer audits all green); the
   residual duplication surface is now small enough that the next round
   should weigh whether the wave pattern still pays for itself.
+
+- **2026-11-16 duplication review fix wave round 12 (4 read-only scouts +
+  Main-sequenced fixes — no fix agents; the surface no longer pays for a
+  dispatch wave)** — 11 findings adjudicated (8 fixed, 3 no-payoff
+  skipped). All verified: tsc 0 errors, eslint 0 errors (111 warnings, one
+  FEWER than baseline — a deleted view export took its react-refresh
+  warning with it), `vitest --changed --maxWorkers=4` green, `pnpm build`
+  green. **Docs-truth P2** — `db:migrate`/`db:push`/`db:studio` were
+  documented in 5 places but NEVER functional: drizzle.config.ts's
+  `connectionString` line had been swallowed by a comment (the config had
+  no connection at all; the file also carried Chinese comments, violating
+  the project standard). The scripts are deleted from package.json — only
+  `db:generate` survives (snapshot diffing needs no connection); docs now
+  state migrations apply at server boot (adapter runner) and inspection
+  goes through the /sql console or DuckDB CLI. Drizzle Kit CANNOT connect
+  to DuckDB, and even if it could, `drizzle-kit migrate` writes journal
+  rows the runtime runner can't match (the 2026-11-09/10
+  migrate.ts-deletion rationale). **Consistency** — events.ts's three
+  range-write handlers parsed bodies inline inside their 500-catch:
+  malformed JSON answered 500 internal_error while every other JSON write
+  route answers 400 invalid_json; all three hoist `readJsonBody` above
+  the try (contracts.ts pattern), regression-pinned. The pass-through
+  wire shapes the old `any` implied are written down as
+  `RangeWriteBody`/`QuickRangeBody` (direction union mirrors the service's
+  private RangeDirection — drift fails loudly at the call site);
+  blockCount uses one guard-proven `!` (TS cannot correlate the mode-array
+  membership with the switch narrowing). **New canonicals** —
+  `views/chainNav.ts useChainlessNav()` (chainless nav shell ×6: Ops/Sql/
+  Tools/Signatures/Help/HelpPage; Search deliberately keeps its bespoke
+  handler — it re-runs the query on chain switch, the scout only flagged
+  its navChainId arm); `clampWindowBlocks` in utils/scanLadder (byte-equal
+  window clamp ×2); `views/Help/helpStyles.ts` (prose style twins ×2).
+  **Dead weight deleted** — eslint.config.mjs duplicate
+  `no-non-null-assertion` key (last-wins made 'off' effective; the fix
+  must keep 'off', deleting the wrong line flips the rule and errors ~5
+  sites — caught immediately by a lint re-run); uninstall.ts's
+  zero-importer DEFAULT_PROBE_PORTS re-export; Ops.tsx's
+  `opsAdminGateFromError` alias; `formatSelectorForDisplay` (a `?? ''`
+  wrapper with one call site + own test describe, inlined); mcp/abi.ts's
+  local ARRAY_SUFFIX_PATTERN copy → paramParsing import. **Scout-claim
+  re-verification again proved necessary**: ScoutShared's "zero importers"
+  grep for the Ops alias was wrong (it missed tests/; the test file was
+  the alias's one consumer — migrated instead of blind-deleted), and a
+  fuzzy css edit briefly merged two DISTINCT HelpPage styles
+  (whereStyle ≠ bodyParagraph) — byte-equal claims need line-level diff
+  before restructuring. **Deferred (standing list unchanged)**:
+  in-flight-dedup Maps, scan ladders, Address-view micro-extractions,
+  card-recipe css, mono-right-row family, SearchService scaffolding; also
+  skipped as no-payoff: 4 hand-rolled record-guards (isRecord swap changes
+  array-input semantics for zero visible benefit) and the
+  DEFAULT_PORTS/opsAdminGate-style single-consumer alias shims that
+  documented tests import. Round-11's question answered: scouts still pay,
+  fix agents don't at this size.

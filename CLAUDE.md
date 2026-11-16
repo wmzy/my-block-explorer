@@ -25,10 +25,10 @@ code in this repository.
 
 ### Database Operations
 
-- `npm run db:generate` - Generate database migrations (uses Drizzle Kit)
-- `npm run db:migrate` - Apply database migrations
-- `npm run db:push` - Push schema changes directly to database
-- `npm run db:studio` - Open Drizzle Studio for database management
+- `npm run db:generate` - Generate database migration files (uses Drizzle Kit)
+- Migrations are applied automatically at server boot by the custom DuckDB
+  adapter (`src/database/duckdb-postgres-adapter.ts`) — Drizzle Kit cannot
+  connect to DuckDB; there is no db:migrate/db:push/db:studio step
 
 ### Code Quality
 
@@ -211,8 +211,8 @@ The application supports all Viem chains out-of-the-box:
 **Custom Migration Flow:**
 
 1. Use Drizzle Kit for schema generation (`npm run db:generate`)
-2. Apply migrations with custom adapter (`npm run db:migrate`)
-3. Database studio available via Drizzle Studio (`npm run db:studio`)
+2. Migrations are applied at server boot by the custom adapter's runner
+3. Inspect data via the in-app SQL console (`/sql`) or the DuckDB CLI
 
 **Schema Management:**
 

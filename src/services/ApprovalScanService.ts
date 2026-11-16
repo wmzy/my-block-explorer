@@ -33,11 +33,9 @@ import { createLogger } from '../server/logger';
 import {
   DEFAULT_MAX_SCAN_CALLS,
   DEFAULT_SCAN_TIMEOUT_MS,
-  DEFAULT_WINDOW_BLOCKS,
   INITIAL_CHUNK_BLOCKS,
-  MAX_WINDOW_BLOCKS,
-  MIN_WINDOW_BLOCKS,
   SCAN_TIMEOUT_GRACE_MS,
+  clampWindowBlocks,
   createProviderCeilingMemory,
 } from '../utils/scanLadder';
 import { createTtlLruCache } from '../utils/ttlLruCache';
@@ -759,11 +757,8 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
       windowBlocks?: number,
       refresh = false,
     ): Promise<ApprovalsResult> => {
-      // Explicit windows clamp into [1, MAX]; undefined uses the default.
-      const effectiveWindow =
-        windowBlocks === undefined
-          ? DEFAULT_WINDOW_BLOCKS
-          : Math.min(Math.max(Math.trunc(windowBlocks), MIN_WINDOW_BLOCKS), MAX_WINDOW_BLOCKS);
+      // Window policy (clamp + default) is single-sourced in scanLadder.
+      const effectiveWindow = clampWindowBlocks(windowBlocks);
       const owner = address.toLowerCase() as Address;
       const cacheKey = `${chainId}:${owner}:${effectiveWindow}`;
 

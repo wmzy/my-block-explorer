@@ -18,7 +18,3 @@ function buildFunctionSignature(func: Pick<ContractFunction, 'name' | 'inputs'>)
   const paramTypes = func.inputs.map(input => input.type).join(',');
   return `functionName(${paramTypes})`.replace('functionName', func.name);
 }
-
-export function formatSelectorForDisplay(selector: `0x${string}` | null): string {
-  return selector ?? '';
-}

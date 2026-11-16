@@ -8,7 +8,7 @@
 // and the local power-user workflow can present themselves.
 import { useState, type KeyboardEvent } from 'react';
 import { css } from '@linaria/core';
-import { useRouter } from '@native-router/react';
+import { useChainlessNav } from '@/views/chainNav';
 import { Alert } from 'haze-ui';
 
 import TopNavigation from '@/components/TopNavigation';
@@ -17,8 +17,6 @@ import { Card } from '@/components/ui/Card';
 import { DataTable } from '@/components/ui/DataTable';
 import { BackendOfflineState, EmptyState } from '@/components/ui/ErrorState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
-import { readRememberedChainId } from '@/views/Home/Landing';
-import { chainRedirect } from '@/views/chainNav';
 import {
   runSqlQuery,
   useSqlTables,
@@ -371,13 +369,9 @@ function SqlResults({ result }: { result: SqlQueryResult }) {
 }
 
 export default function SqlConsole() {
-  const router = useRouter();
-  // The console is not chain-scoped, but the topbar still is (its links
-  // and search route into /chain/:chainId pages): the remembered chain —
-  // never a hard-coded one — provides that context, same fallback order
-  // as the other chain-less pages (Search).
-  const navChainId = readRememberedChainId() ?? 1;
-  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
+  // Chain-less page: the topbar follows the remembered chain (hook home:
+  // views/chainNav.ts useChainlessNav, shared with Ops, Tools and Search).
+  const { navChainId, handleNavChainChange } = useChainlessNav();
 
   const tables = useSqlTables();
   const [queryText, setQueryText] = useState('');

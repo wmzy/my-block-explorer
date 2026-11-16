@@ -149,12 +149,14 @@ URL entered manually once.
 
 ## Data management
 
-- `data/blockchain.db` — main DB (contract sources, search history, RPC configs)
-- `data/chains/{type}/{name}-{id}.db` — per-chain event DBs
+- `data/blockchain.db` — the single main DB (contract sources, labels,
+  indexed events, RPC configs; per-chain rows keyed by composite chain ids)
+- `data/chains/` — legacy directory from the removed per-chain DB subsystem;
+  nothing writes here anymore, old files are safe to delete
 
 Backup = stop the server and copy the files (DuckDB is single-writer; a hot copy
-of a database being written to is not safe). Inspect data with `pnpm db:studio`
-(Drizzle Studio) or the DuckDB CLI — these are DuckDB files, **not** SQLite.
+of a database being written to is not safe). Inspect data with the in-app SQL
+console (`/sql`) or the DuckDB CLI — these are DuckDB files, **not** SQLite.
 
 ## Uninstall
 

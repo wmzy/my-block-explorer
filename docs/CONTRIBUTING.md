@@ -44,7 +44,7 @@ The app has three run modes (RPC-only / local backend / shared deployment) — s
 | `pnpm build`                                                   | Build client (`dist/client`) + server (`dist/server`)           |
 | `pnpm build:client` / `pnpm build:server` / `pnpm build:pages` | Build pieces; `build:pages` sets `VITE_BASE` for the Pages demo |
 | `pnpm start`                                                   | Run the built API server (`node dist/server/cli.js`)            |
-| `pnpm db:generate` / `pnpm db:migrate` / `pnpm db:studio`      | Drizzle migrations (generate / apply / inspect)                 |
+| `pnpm db:generate`                                             | Generate Drizzle migration files (applied at server boot)        |
 | `pnpm test` / `pnpm test:unit` / `pnpm test:integration`       | Vitest (all / `tests/unit` / `tests/integration`)               |
 | `pnpm lint` / `pnpm format` / `pnpm typecheck`                 | ESLint / Prettier / `tsc --noEmit`                              |
 

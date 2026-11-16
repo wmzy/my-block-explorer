@@ -14,7 +14,7 @@
 // hidden below 768px, so the header points keyboard users at Ctrl/Cmd+K
 // and everyone else at the cards below.
 import { css } from '@linaria/core';
-import { TypedLink, useRouter } from '@native-router/react';
+import { TypedLink } from '@native-router/react';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Badge } from '@/components/ui/Badge';
@@ -22,7 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainName } from '@/config/chains';
 import { readRememberedChainId } from '@/views/Home/Landing';
-import { chainRedirect } from '@/views/chainNav';
+import { useChainlessNav } from '@/views/chainNav';
 
 // --- Pure card model (exported for the unit tests) ---
 
@@ -251,14 +251,11 @@ const paletteHint = css`
 // --- View ---
 
 export default function Tools() {
-  const router = useRouter();
-  // Not chain-scoped, but the topbar still is (its links and search route
-  // into /chain/:chainId pages): the remembered chain provides that
-  // context, same fallback order as the other chain-less pages (SQL
-  // console, Ops, Search).
+  // Chain-less page: the topbar follows the remembered chain (hook home:
+  // views/chainNav.ts useChainlessNav, shared with the SQL console, Ops,
+  // Signatures and Help).
   const remembered = readRememberedChainId();
-  const navChainId = remembered ?? 1;
-  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
+  const { navChainId, handleNavChainChange } = useChainlessNav();
 
   const cards = buildToolCards(
     remembered,

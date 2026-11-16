@@ -18,7 +18,7 @@ import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { css } from '@linaria/core';
 import { useDebouncedQueryParam } from '@/util/useDebouncedQueryParam';
-import { useSearch, useSetSearch, useRouter } from '@native-router/react';
+import { useSearch, useSetSearch } from '@native-router/react';
 import { z } from 'zod';
 import { Input } from 'haze-ui';
 
@@ -34,8 +34,7 @@ import type { ResolvedSignatures, SignatureLookup } from '@/services/signatures'
 import { CopyButton } from '@/components/ui/CopyButton';
 import { isBackendUnreachable } from '@/util/http';
 import { errorMessage } from '@/utils/errorHandler';
-import { readRememberedChainId } from '@/views/Home/Landing';
-import { chainRedirect } from '@/views/chainNav';
+import { useChainlessNav } from '@/views/chainNav';
 
 // ---------------------------------------------------------------------------
 // Input classification (pure, exported for tests)
@@ -331,14 +330,12 @@ function LookupSection({
 // ---------------------------------------------------------------------------
 
 export default function SignaturesView() {
-  const router = useRouter();
   const setSearch = useSetSearch(searchSchema);
   const { q: qParam } = useSearch(searchSchema);
 
-  // Not chain-scoped, but the topbar still is (Sql console pattern): the
-  // remembered chain — never a hard-coded one — provides that context.
-  const navChainId = readRememberedChainId() ?? 1;
-  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
+  // Chain-less page: the topbar follows the remembered chain (hook home:
+  // views/chainNav.ts useChainlessNav, shared with the other chain-less pages).
+  const { navChainId, handleNavChainChange } = useChainlessNav();
 
   // The ?q= input (shared directory debounce): the debounced write or an
   // Enter (commit) replaces the URL entry so typing does not spam history.

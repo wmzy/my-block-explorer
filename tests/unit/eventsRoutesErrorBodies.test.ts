@@ -314,3 +314,49 @@ describe('GET .../events/indexing-status failure shape', () => {
     });
   });
 });
+
+describe('malformed JSON on the range write routes', () => {
+  // The three body-bearing write handlers parse via readJsonBody ABOVE
+  // their generic catch (the contracts.ts read/simulate/estimate pattern):
+  // malformed JSON must answer the repo-wide 400 invalid_json envelope,
+  // never the 500 internal_error arm (which also logged a false alarm).
+  const post = (path: string) =>
+    request(path, { method: 'POST', body: '{not json', headers: { 'Content-Type': 'application/json' } });
+
+  it('answers 400 invalid_json on POST .../ranges instead of 500 internal_error', async () => {
+    const res = await post(`${BASE}/ranges`);
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'invalid_json',
+      message: 'Request body must be valid JSON',
+    });
+    expect(mocks.addIndexingRange).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 invalid_json on POST .../ranges/quick instead of 500 internal_error', async () => {
+    const res = await post(`${BASE}/ranges/quick`);
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'invalid_json',
+      message: 'Request body must be valid JSON',
+    });
+    expect(mocks.createRangeAll).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 invalid_json on PATCH .../ranges/:rangeId instead of 500 internal_error', async () => {
+    const res = await request(`${BASE}/ranges/7`, {
+      method: 'PATCH',
+      body: '{not json',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'invalid_json',
+      message: 'Request body must be valid JSON',
+    });
+    expect(mocks.updateIndexingRange).not.toHaveBeenCalled();
+  });
+});

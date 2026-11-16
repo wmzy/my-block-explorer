@@ -40,7 +40,7 @@ import {
 import { safeJsonResponse } from '../utils/serialization';
 import { csvAttachmentHeaders } from '../utils/csv';
 import { errorMessage } from '../utils/errorHandler';
-import { createApiError, invalidPageResponse, respondError } from '../utils/api-error';
+import { createApiError, invalidPageResponse, readJsonBody, respondError } from '../utils/api-error';
 import { contractSourceService } from '../services/ContractSourceService';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import type { BlockTagInput } from '@/types/events';
@@ -54,6 +54,29 @@ const VALID_BLOCK_TAGS = ['latest', 'finalized', 'safe', 'earliest'];
 // block tags; the service resolves tags to concrete numbers before storing.
 const isValidBlockBound = (value: unknown): value is BlockTagInput =>
   typeof value === 'number' || (typeof value === 'string' && VALID_BLOCK_TAGS.includes(value));
+
+// Loose wire shapes for the range write bodies: the guards inside each
+// handler are the actual runtime validation (bounds, mode, blockCount);
+// direction/priority/abi pass through to the service unvalidated, exactly
+// as they did when c.req.json() returned any — these types only write
+// that implied contract down. The direction union mirrors
+// EventIndexingService's RangeDirection; a drift fails at the service
+// call, not silently.
+type RangeWriteBody = {
+  fromBlock?: BlockTagInput;
+  toBlock?: BlockTagInput;
+  direction?: 'forward' | 'backward';
+  priority?: number;
+};
+
+type QuickRangeBody = {
+  mode?: string;
+  blockCount?: number;
+  direction?: 'forward' | 'backward';
+  priority?: number;
+  abi?: Abi;
+  confirmFullHistory?: unknown;
+};
 
 const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
   const parsed = parseChainAndAddressParams(chainIdStr, addressStr);
@@ -498,8 +521,11 @@ app.post(
 
     const { chainId, address } = result;
 
+    // Malformed JSON must answer the repo-wide 400 invalid_json envelope,
+    // not this handler's generic 500 internal_error arm.
+    const body = await readJsonBody<RangeWriteBody>(c);
+
     try {
-      const body = await c.req.json();
       const { fromBlock, toBlock, direction, priority } = body;
 
       if (!isValidBlockBound(fromBlock) || !isValidBlockBound(toBlock)) {
@@ -562,8 +588,11 @@ app.post(
 
     const { chainId, address } = result;
 
+    // Malformed JSON must answer the repo-wide 400 invalid_json envelope,
+    // not this handler's generic 500 internal_error arm.
+    const body = await readJsonBody<QuickRangeBody>(c);
+
     try {
-      const body = await c.req.json();
       const { mode, blockCount, direction, priority, abi, confirmFullHistory } = body;
 
       const validModes = ['all', 'recent', 'first', 'continue', 'catchup'];
@@ -585,6 +614,9 @@ app.post(
           'blockCount is required and must be a positive number for mode: recent, first, continue',
         );
       }
+      // Guard-proven number for the modes that consume it below (TS cannot
+      // correlate the mode array membership with the switch narrowing).
+      const resolvedBlockCount = blockCount!;
 
       let response:
         | {
@@ -609,13 +641,13 @@ app.post(
           });
           break;
         case 'recent':
-          response = await createRangeRecent(chainId, address, blockCount, { direction, priority });
+          response = await createRangeRecent(chainId, address, resolvedBlockCount, { direction, priority });
           break;
         case 'first':
-          response = await createRangeFirst(chainId, address, blockCount, { direction, priority });
+          response = await createRangeFirst(chainId, address, resolvedBlockCount, { direction, priority });
           break;
         case 'continue':
-          response = await createRangeContinue(chainId, address, blockCount, {
+          response = await createRangeContinue(chainId, address, resolvedBlockCount, {
             direction,
             priority,
           });
@@ -706,8 +738,11 @@ app.patch(
 
     const { chainId, address, rangeId } = params;
 
+    // Malformed JSON must answer the repo-wide 400 invalid_json envelope,
+    // not this handler's generic 500 internal_error arm.
+    const body = await readJsonBody<RangeWriteBody>(c);
+
     try {
-      const body = await c.req.json();
       const { fromBlock, toBlock, direction, priority } = body;
 
       if (

@@ -6,11 +6,9 @@ import { errorMessage } from '../utils/errorHandler';
 import {
   DEFAULT_MAX_SCAN_CALLS,
   DEFAULT_SCAN_TIMEOUT_MS,
-  DEFAULT_WINDOW_BLOCKS,
   INITIAL_CHUNK_BLOCKS,
-  MAX_WINDOW_BLOCKS,
-  MIN_WINDOW_BLOCKS,
   SCAN_TIMEOUT_GRACE_MS,
+  clampWindowBlocks,
   createProviderCeilingMemory,
 } from '../utils/scanLadder';
 import { createTtlLruCache } from '../utils/ttlLruCache';
@@ -515,11 +513,8 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
       refresh = false,
       mode: TransferScanMode = 'participant',
     ): Promise<TokenTransfersResult> => {
-      // Explicit windows clamp into [1, MAX]; undefined uses the default.
-      const effectiveWindow =
-        windowBlocks === undefined
-          ? DEFAULT_WINDOW_BLOCKS
-          : Math.min(Math.max(Math.trunc(windowBlocks), MIN_WINDOW_BLOCKS), MAX_WINDOW_BLOCKS);
+      // Window policy (clamp + default) is single-sourced in scanLadder.
+      const effectiveWindow = clampWindowBlocks(windowBlocks);
       const cacheKey = `${chainId}:${address.toLowerCase()}:${effectiveWindow}:${mode}`;
 
       // Cache-bypass refresh: skip the read entirely (even a fresh

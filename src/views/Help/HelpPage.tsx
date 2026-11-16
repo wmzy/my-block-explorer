@@ -19,38 +19,15 @@ import { TypedLink, useMatched, useRouter } from '@native-router/react';
 import TopNavigation from '@/components/TopNavigation';
 import { Card, CardContent, CardTitle } from '@/components/ui/Card';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
-import { readRememberedChainId } from '@/views/Home/Landing';
-import { chainRedirect } from '@/views/chainNav';
+import { useChainlessNav } from '@/views/chainNav';
 import { findHelpTopic, relatedHelpTopics } from './helpContent';
-
-const sectionCardStyle = css`
-  margin-bottom: var(--haze-space-6);
-`;
-
-const bodyParagraph = css`
-  margin: var(--haze-space-3) 0 0;
-  color: var(--haze-color-text-secondary);
-  line-height: var(--haze-leading-relaxed);
-
-  &:first-of-type {
-    margin-top: 0;
-  }
-`;
+import { sectionCardStyle, proseParagraph, proseLink } from './helpStyles';
 
 const whereStyle = css`
   margin: var(--haze-space-3) 0 0;
   color: var(--haze-color-text-muted);
   font-size: var(--haze-text-sm);
   line-height: var(--haze-leading-relaxed);
-`;
-
-const linkStyle = css`
-  color: var(--haze-color-primary);
-  text-decoration: none;
-
-  &:hover {
-    text-decoration: underline;
-  }
 `;
 
 // The two-column term/meaning list (symptoms, health fields). Same 375px
@@ -122,8 +99,9 @@ export default function HelpPage() {
   const match = useMatched();
   const topic = findHelpTopic(match.params.topic);
 
-  const navChainId = readRememberedChainId() ?? 1;
-  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
+  // Chain-less page (hook home: views/chainNav.ts useChainlessNav); the
+  // local router stays for the 404 throw below.
+  const { navChainId, handleNavChainChange } = useChainlessNav();
 
   // Unknown topic: raise the ROUTER's 404, which the app's notFound prop
   // renders (src/views/NotFound.tsx) — the same treatment any other
@@ -144,7 +122,7 @@ export default function HelpPage() {
         <Card className={sectionCardStyle}>
           <CardContent>
             {topic.body.map(paragraph => (
-              <p key={paragraph.slice(0, 32)} className={bodyParagraph}>
+              <p key={paragraph.slice(0, 32)} className={proseParagraph}>
                 {paragraph}
               </p>
             ))}
@@ -178,7 +156,7 @@ export default function HelpPage() {
             <CardContent>
               <CardTitle as="h2">{topic.table.title}</CardTitle>
               {topic.table.intro !== undefined && (
-                <p className={bodyParagraph}>{topic.table.intro}</p>
+                <p className={proseParagraph}>{topic.table.intro}</p>
               )}
               <dl className={factList}>
                 {topic.table.rows.map(({ label, detail }) => (
@@ -198,7 +176,7 @@ export default function HelpPage() {
             <ul className={topicList}>
               {relatedHelpTopics(topic.slug).map(other => (
                 <li key={other.slug} className={topicItem}>
-                  <TypedLink to={`/help/${other.slug}`} className={linkStyle}>
+                  <TypedLink to={`/help/${other.slug}`} className={proseLink}>
                     <span className={topicTitleStyle}>{other.title}</span>
                   </TypedLink>
                   <p className={topicSummaryStyle}>{other.summary}</p>
@@ -206,7 +184,7 @@ export default function HelpPage() {
               ))}
             </ul>
             <p className={whereStyle}>
-              <TypedLink to="/help" className={linkStyle}>
+              <TypedLink to="/help" className={proseLink}>
                 ← All help topics
               </TypedLink>
             </p>
