@@ -4,6 +4,7 @@ import { StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { panelEnterBase } from '@/components/ui/motion';
 import { getApiBase } from '@/util/apiBase';
+import { useClickOutside } from '@/util/useClickOutside';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 
 const containerStyle = css`
@@ -116,11 +117,7 @@ const versionBadgeStyle = css`
   font-family: var(--haze-font-mono);
 `;
 
-type ConnectionStatusProps = {
-  className?: string;
-};
-
-export function ConnectionStatus({ className: _className }: ConnectionStatusProps) {
+export function ConnectionStatus() {
   const { status, serviceInfo, isConnected, isScanning, disconnect, reconnect } =
     useServiceDiscovery();
 
@@ -128,18 +125,10 @@ export function ConnectionStatus({ className: _className }: ConnectionStatusProp
   const reconnectingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Click-outside auto-close (same pattern as TopNavigation/OpenInIdeButton):
-  // the container wraps badge + panel, so only truly outside clicks dismiss.
-  useEffect(() => {
-    if (!isExpanded) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsExpanded(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isExpanded]);
+  // Click-outside auto-close (the canonical useClickOutside hook, its
+  // listener attached only while open): the container wraps badge +
+  // panel, so only truly outside presses dismiss.
+  useClickOutside(containerRef, () => setIsExpanded(false), { enabled: isExpanded });
 
   // Auto-reconnect: poll every 30s, silently attempt reconnect on service loss
   useEffect(() => {

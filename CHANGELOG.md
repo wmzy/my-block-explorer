@@ -9,6 +9,41 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-16 duplication review fix wave round 11 (4 read-only scouts +
+  2 fix agents + integration)** — the leanest round yet: 10 findings
+  adjudicated (7 fixed, 1 rejected on re-verification, 2 deliberate).
+  All verified: tsc 0 errors, eslint 0 errors (2 new warnings, the
+  pre-existing react-refresh class on the new shared module), focused +
+  `vitest --changed --maxWorkers=4` green, `pnpm build` green, browser
+  smoke on the three migrated lazy cards. **New canonical**:
+  `components/ui/LazyCollapsibleHeader.tsx` — the lazily-fetched cards'
+  clickable header (role=button/keyboard/chevron) was byte-copied across
+  CallTrace, block InternalTxnsSection, and RawJson (each with a "why not
+  Collapsible" comment); one shared component + exported
+  `lazyHeaderTitleRowStyle`/`lazyHeaderMetaStyle` now serves all three,
+  DOM byte-identical (data-testid/aria/svg preserved). **Dedup** —
+  ConnectionStatus's hand-rolled mousedown-outside effect → the canonical
+  `util/useClickOutside`; AddressService.getAddressTransactions's two
+  byte-equivalent served-page tails (cached/fresh) → one local
+  `shapeServedPage` closure (merge findings → coverage honesty floor →
+  filter → slice), all three semantics comments preserved. **Dead code
+  deleted**: `runningScanJobCount` (AddressScanService, zero importers),
+  `components/events/index.ts` barrel (zero importers; EventsPanel
+  deep-imports), ConnectionStatus's never-applied `className` prop.
+  **Docs truth**: stale `parseStrictInteger` route enumeration in
+  utils/validation.ts replaced with a non-brittle description;
+  utils/AGENTS.md format.ts "import-free" claim corrected to "free of
+  PROJECT imports" (it uses viem formatters); specs/001-abi/quickstart.md
+  gained a historical-document banner (its dynamic-filter examples
+  referenced the subsystem deleted 2026-11-08). **Rejected on Main
+  re-verification**: scout claim that `contract_sources
+  .constructorArguments` is write-only-empty was wrong —
+  ContractSourceService writes REAL constructor args from external
+  payloads (Sourcify/Blockscan path) and the frontend type consumes
+  them; column stays. **Deliberate**: per-test-file `BlockHookResult`
+  partial shapes stay (scenario-specific known-answer fixtures; full
+  ReturnType typing would force mocks all-field).
+
 - **2026-11-15 duplication review fix wave round 10 (4 read-only scouts +
   8 concurrent fix agents + integration)** — round 10; 20 findings from a
   four-scout review, all fixed. All verified: tsc 0 errors, eslint 0 errors

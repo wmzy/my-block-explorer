@@ -11,7 +11,8 @@ utils/
 ├── format.ts              # Formatting: formatValue/formatGasPrice/formatNumber,
 │                          #   truncateMiddle, formatNativeDisplay, formatBigInt,
 │                          #   formatAddress/formatHash (middle truncation),
-│                          #   formatFileSize — import-free by design
+│                          #   formatFileSize — free of PROJECT imports by
+│                          #   design (its only dependency is viem formatters)
 ├── address.ts             # HEX_ADDRESS_RE, isAddressShape, addressVerdict
 │                          #   (two-tier shape→EIP-55), checksumAddress
 ├── addressValidity.ts     # checkAddressValidity — page-level two-tier guard

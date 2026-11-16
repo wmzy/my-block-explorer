@@ -470,8 +470,6 @@ const scanJobKey = (chainId: number, address: string): string =>
 export const isScanJobActive = (chainId: number, address: string): boolean =>
   runningScanJobs.has(scanJobKey(chainId, address));
 
-export const runningScanJobCount = (): number => runningScanJobs.size;
-
 const removeFromScanQueue = (chainId: number, address: string): void => {
   const key = scanJobKey(chainId, address);
   for (let i = scanQueue.length - 1; i >= 0; i--) {

@@ -11,10 +11,10 @@ import { parseStrictInteger } from './strictInteger';
  * Parse a plain decimal integer, or null when the input is not one.
  * Numbers pass through when finite and integral.
  *
- * Exported for the route query-param parsers (routes/{blocks,transactions,
- * contracts,addresses,events}.ts), which had the same parseInt prefix
- * acceptance: `?limit=20abc` was served as limit 20 instead of the 400
- * those parsers' own comments promise.
+ * Exported for the route query-param parsers and the events-panel/
+ * RPC-config inputs (every strict-decimal reader that used to lean on
+ * parseInt's prefix acceptance: `?limit=20abc` was served as limit 20
+ * instead of the 400 those parsers' own comments promise).
  *
  * The implementation lives in ./strictInteger (import-free) so the CLI
  * can share this one definition without pulling viem into its entry graph;

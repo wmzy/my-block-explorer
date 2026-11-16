@@ -709,30 +709,33 @@ const createAddressService = (deps: AddressServiceDeps) => {
       // heuristic items down the merged order).
       const neededItems = offset + limit + (options?.deepScanFindings?.length ?? 0);
 
-      const cached = readTxSearchCache(cacheKey, neededItems);
-      if (cached) {
-        logger.info(`Serving cached tx search for ${address} on chain ${chainId}`);
-        // Points are computed from the cached FULL list on demand, so a
-        // chart request always agrees with the list served from the same
-        // cache entry (the merge, when present, applies to both).
+      // Shape the served page from a heuristic base (cached or fresh):
+      // merge findings, floor the coverage verdict, then filter + slice.
+      // - balancePoints are computed from the served (filtered) FULL list
+      //   on demand, so a chart request always agrees with the list
+      //   served from the same cache entry (the merge, when present,
+      //   applies to both).
+      // - Honesty floor: a heuristic 'none' verdict ('zero-balance',
+      //   'search-failed') is false when persisted deep-scan findings are
+      //   served — the honest verdict for a non-empty merged list is
+      //   'partial' (the route lifts it to 'complete' only for a finished
+      //   genesis-anchored walk).
+      // - Filters narrow the merged list BEFORE pagination: `total` and
+      //   the served slice describe the FILTERED view of the same
+      //   discovery, while the canonical cache entry stays UNFILTERED (a
+      //   different filter reuses it); balancePoints follow the served
+      //   set for coherence.
+      const shapeServedPage = (base: AddressTransactionsResult): AddressTransactionsResult => {
         const mergedFull = options?.deepScanFindings
-          ? mergeDiscoveredTransactions(cached.transactions, options.deepScanFindings)
-          : cached.transactions;
-        // Honesty floor: a heuristic 'none' verdict ('zero-balance',
-        // 'search-failed') is false when persisted deep-scan findings are
-        // being served — the honest verdict for a non-empty merged list
-        // is 'partial' (the route lifts it to 'complete' only for a
-        // finished genesis-anchored walk).
+          ? mergeDiscoveredTransactions(base.transactions, options.deepScanFindings)
+          : base.transactions;
         const coverageFloor =
-          options?.deepScanFindings && mergedFull.length > 0 && cached.coverage === 'none'
+          options?.deepScanFindings && mergedFull.length > 0 && base.coverage === 'none'
             ? 'partial'
-            : cached.coverage;
-        // Filters narrow the merged list before pagination: `total` and
-        // the served slice describe the FILTERED view of the same cached
-        // discovery (balancePoints follow the served set for coherence).
+            : base.coverage;
         const filteredFull = applyDiscoveredTxFilters(mergedFull, options?.filters);
         return {
-          ...cached,
+          ...base,
           coverage: coverageFloor,
           transactions: filteredFull.slice(offset, offset + limit),
           total: filteredFull.length,
@@ -740,6 +743,12 @@ const createAddressService = (deps: AddressServiceDeps) => {
             ? { balancePoints: computeDiscoveredBalancePoints(filteredFull, address) }
             : {}),
         };
+      };
+
+      const cached = readTxSearchCache(cacheKey, neededItems);
+      if (cached) {
+        logger.info(`Serving cached tx search for ${address} on chain ${chainId}`);
+        return shapeServedPage(cached);
       }
 
       const doSearch = async (budget: number): Promise<AddressTransactionsResult> => {
@@ -835,28 +844,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
         // The merge is applied at read time (the cache stays heuristic
         // only) so persisted findings surface even on heuristic-skip
         // paths like zero-balance.
-        const mergedFull = options?.deepScanFindings
-          ? mergeDiscoveredTransactions(result.transactions, options.deepScanFindings)
-          : result.transactions;
-        // Same honesty floor as the cached path: served findings disprove
-        // a heuristic 'none' verdict.
-        const coverageFloor =
-          options?.deepScanFindings && mergedFull.length > 0 && result.coverage === 'none'
-            ? 'partial'
-            : result.coverage;
-        // Same narrowing as the cached path: the canonical cache entry
-        // stays unfiltered (a different filter reuses it), only the
-        // served page and its totals describe the filtered view.
-        const filteredFull = applyDiscoveredTxFilters(mergedFull, options?.filters);
-        return {
-          ...result,
-          coverage: coverageFloor,
-          transactions: filteredFull.slice(offset, offset + limit),
-          total: filteredFull.length,
-          ...(options?.includeBalancePoints
-            ? { balancePoints: computeDiscoveredBalancePoints(filteredFull, address) }
-            : {}),
-        };
+        return shapeServedPage(result);
       } catch (error) {
         logger.error({ err: error }, `Binary search failed for ${address}`);
         return {

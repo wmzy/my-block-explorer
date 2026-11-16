@@ -28,6 +28,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ErrorState } from '@/components/ui/ErrorState';
+import {
+  LazyCollapsibleHeader,
+  lazyHeaderMetaStyle,
+  lazyHeaderTitleRowStyle,
+} from '@/components/ui/LazyCollapsibleHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { TracedProgress } from '@/components/TracedProgress';
 import {
@@ -55,48 +60,6 @@ import {
   type BlockInternalTxnsAggregate,
   type BlockTraceTxOutcome,
 } from './internalTxns';
-
-// The clickable header row: full-width toggle with the Collapsible card's
-// affordances (role=button, keyboard, rotating chevron). Built on Card
-// primitives instead of the Collapsible component because the sweep must
-// fire on the FIRST expand only — semantics Collapsible's internal state
-// cannot signal outward (same reason as the tx page's Call Trace card).
-const headerToggleStyle = css`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--haze-space-3);
-  width: 100%;
-  cursor: pointer;
-  user-select: none;
-`;
-
-const headerTitleRowStyle = css`
-  display: flex;
-  align-items: baseline;
-  gap: var(--haze-space-3);
-  flex-wrap: wrap;
-  min-width: 0;
-`;
-
-// Settled summary in the header (frame count across traced txs) so the
-// collapsed card still tells the reader what the sweep holds.
-const headerMetaStyle = css`
-  font-size: var(--haze-text-xs);
-  color: var(--haze-color-text-muted);
-`;
-
-const chevronStyle = css`
-  width: 20px;
-  height: 20px;
-  color: var(--haze-color-text-muted);
-  transition: transform 200ms ease;
-  flex-shrink: 0;
-`;
-
-const chevronExpandedStyle = css`
-  transform: rotate(180deg);
-`;
 
 // Standing scope line: renders in every expanded phase so the data's
 // provenance — on-demand traces from this node's debug API, not an
@@ -297,6 +260,8 @@ export function InternalTxnsSection({
 
   const symbol = getChainSymbol(chainId);
   const nativeDecimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
+  // Settled summary in the header (frame count across traced txs) so the
+  // collapsed card still tells the reader what the sweep holds.
   const headerMeta =
     state.phase === 'settled' ? blockInternalTxnsSummary(state.result.aggregate) : null;
 
@@ -423,32 +388,17 @@ export function InternalTxnsSection({
   return (
     <Card>
       <CardHeader>
-        <div
-          role="button"
-          tabIndex={0}
-          aria-expanded={expanded}
-          onClick={handleToggle}
+        <LazyCollapsibleHeader
+          expanded={expanded}
+          onToggle={handleToggle}
           onKeyDown={handleKeyDown}
-          className={headerToggleStyle}
-          data-testid="block-internal-txns-header"
+          testId="block-internal-txns-header"
         >
-          <div className={headerTitleRowStyle}>
+          <div className={lazyHeaderTitleRowStyle}>
             <CardTitle>Internal Transactions (traced)</CardTitle>
-            {headerMeta !== null && <span className={headerMetaStyle}>{headerMeta}</span>}
+            {headerMeta !== null && <span className={lazyHeaderMetaStyle}>{headerMeta}</span>}
           </div>
-          <svg
-            className={cx(chevronStyle, expanded && chevronExpandedStyle)}
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </div>
+        </LazyCollapsibleHeader>
       </CardHeader>
       {expanded && (
         <CardContent>

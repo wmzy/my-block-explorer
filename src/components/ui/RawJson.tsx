@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Card, CardHeader, CardTitle } from './Card';
 import { CopyButton, copyButtonBase } from './CopyButton';
 import { ErrorState } from './ErrorState';
+import { LazyCollapsibleHeader } from './LazyCollapsibleHeader';
 import { useLazyExpand } from '@/util/useLazyExpand';
 
 // One raw-RPC payload section of the Raw JSON card. `load` receives the
@@ -33,33 +34,6 @@ type RawJsonProps = {
    */
   identity: string;
 };
-
-// The clickable header row: full-width toggle with the Collapsible card's
-// affordances (role=button, keyboard, rotating chevron). Built on Card
-// primitives with the shared lazy-expand machine (util/useLazyExpand)
-// because the section fetches must fire on the FIRST expand only —
-// semantics a plain Collapsible's internal state cannot signal outward.
-const headerToggleStyle = css`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--haze-space-3);
-  width: 100%;
-  cursor: pointer;
-  user-select: none;
-`;
-
-const chevronStyle = css`
-  width: 20px;
-  height: 20px;
-  color: var(--haze-color-text-muted);
-  transition: transform 200ms ease;
-  flex-shrink: 0;
-`;
-
-const chevronExpandedStyle = css`
-  transform: rotate(180deg);
-`;
 
 // Sections stay MOUNTED while collapsed (hidden, not unmounted): their
 // settled payloads survive collapse/expand as a cache, while the hidden
@@ -243,29 +217,14 @@ export function RawJsonCard({ title, fetchers, identity }: RawJsonProps) {
   return (
     <Card>
       <CardHeader>
-        <div
-          role="button"
-          tabIndex={0}
-          aria-expanded={expanded}
-          onClick={handleToggle}
+        <LazyCollapsibleHeader
+          expanded={expanded}
+          onToggle={handleToggle}
           onKeyDown={handleKeyDown}
-          className={headerToggleStyle}
-          data-testid="raw-json-header"
+          testId="raw-json-header"
         >
           <CardTitle>{title}</CardTitle>
-          <svg
-            className={cx(chevronStyle, expanded && chevronExpandedStyle)}
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </div>
+        </LazyCollapsibleHeader>
       </CardHeader>
       <div className={cx(contentStyle, !expanded && contentCollapsedStyle)} aria-hidden={!expanded}>
         {fetchers.map((fetcher, index) => (

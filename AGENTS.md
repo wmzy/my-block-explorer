@@ -2356,3 +2356,49 @@ pnpm typecheck           # tsc --noEmit
   — curl the port before concluding boot failure, and kill the orphan pid
   before its successor (two live servers on one DuckDB file is the real
   dual-writer case).
+- **2026-11-16 duplication review fix wave round 11 (4 read-only scouts +
+  2 fix agents + integration)** — the leanest round: 10 findings
+  adjudicated (7 fixed, 1 REJECTED on Main re-verification, 2 deliberate).
+  All verified: tsc 0 errors, eslint 0 errors (2 new warnings = the
+  pre-existing react-refresh class on the new shared module), `vitest
+  --changed --maxWorkers=4` 143 files / 1836 tests green, `pnpm build`
+  green, live browser smoke on all three migrated lazy cards (mainnet via
+  standalone server + throwaway DuckDB). **New canonical** —
+  `components/ui/LazyCollapsibleHeader.tsx`: the lazily-fetched cards'
+  clickable header (role=button/keyboard/rotating chevron) had been
+  byte-copied across CallTrace + block InternalTxnsSection + RawJson (each
+  copy carrying its own "why not Collapsible" comment — first-expand
+  semantics); one component + exported `lazyHeaderTitleRowStyle`/
+  `lazyHeaderMetaStyle` now serves all three, DOM byte-identical
+  (data-testid/aria/attribute-order/svg path preserved — smoke verified
+  aria flips, Enter-key collapse, chevron rotate(180deg) computed matrix,
+  and the honest not-supported card when the RPC lacks debug_*).
+  **Dedup** — ConnectionStatus's hand-rolled mousedown-outside effect →
+  canonical `util/useClickOutside` (attach-while-open contract identical);
+  AddressService.getAddressTransactions's two byte-equivalent served-page
+  tails (cached/fresh) → one local `shapeServedPage` closure (findings
+  merge → coverage honesty floor → filter-before-pagination; all three
+  semantics comments preserved in the helper's doc). **Dead deleted**:
+  `runningScanJobCount` (AddressScanService), the
+  `components/events/index.ts` barrel (zero importers — EventsPanel
+  deep-imports; its last doc reference, specs/001-abi/quickstart.md, got
+  a historical-document banner instead of a rewrite — the spec's
+  dynamic-filter examples describe the subsystem deleted 2026-11-08),
+  ConnectionStatus's never-applied `className` prop. **Docs truth**:
+  stale parseStrictInteger route enumeration (utils/validation.ts) →
+  non-brittle description; utils/AGENTS.md "format.ts import-free" →
+  "free of PROJECT imports" (it uses viem formatters). **REJECTED scout
+  claim** — "`contract_sources.constructorArguments` is write-only-empty,
+  drop it" was WRONG: ContractSourceService writes REAL constructor args
+  from external payloads (the Sourcify/Blockscan persist path derives
+  `constructorArgs` from the fetched source object) and the frontend
+  contract type consumes them; round-7's "re-verify P0/P1 evidence
+  before dispatch" rule caught it at adjudication. **Deliberate**:
+  per-test-file partial `BlockHookResult` shapes stay (blockDetailPage/
+  Nav/SlotEpoch mocks are scenario-specific known-answer fixtures — e.g.
+  slotEpoch pins merge block 15537394 — and full ReturnType<typeof
+  useBlockByNumber> typing would force every mock to carry the whole
+  RpcBlock surface). Tier verdicts this round: backend/shared/infra tiers
+  essentially clean (scouts' canonical-importer audits all green); the
+  residual duplication surface is now small enough that the next round
+  should weigh whether the wave pattern still pays for itself.
