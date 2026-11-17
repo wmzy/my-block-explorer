@@ -9,13 +9,14 @@
 import { useState, type KeyboardEvent } from 'react';
 import { css } from '@linaria/core';
 import { useChainlessNav } from '@/views/chainNav';
-import { Alert } from 'haze-ui';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { DataTable } from '@/components/ui/DataTable';
 import { BackendOfflineState, EmptyState } from '@/components/ui/ErrorState';
+import { useReconnectRefetch } from '@/util/useReconnectRefetch';
+import { AdminErrorNotice, AdminGateCard, gateText } from '@/views/adminConsoleShared';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import {
   runSqlQuery,
@@ -23,8 +24,7 @@ import {
   type SqlCellValue,
   type SqlQueryResult,
 } from '@/services/sqlConsole';
-import { adminGateFromError, rateLimitWaitSeconds } from '@/util/adminGate';
-import { ApiError } from '@/util/apiError';
+import { adminGateFromError } from '@/util/adminGate';
 import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 import { SQL_CONSOLE_STORAGE_KEY } from '@/util/storageKeys';
 import { isBackendUnreachable } from '@/util/http';
@@ -236,22 +236,6 @@ const runErrorBox = css`
   margin-top: var(--haze-space-4);
 `;
 
-const gateCard = css`
-  max-width: 640px;
-`;
-
-const gateBody = css`
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--haze-space-2);
-`;
-
-const gateText = css`
-  margin: 0;
-  line-height: var(--haze-leading-relaxed);
-`;
-
 const gateCode = css`
   align-self: flex-start;
   padding: var(--haze-space-1) var(--haze-space-3);
@@ -278,50 +262,24 @@ const cellStyle = css`
 // is missing: a server without ADMIN_TOKEN cannot be authorized around —
 // the operator must set one and restart; a wrong browser token is fixed in
 // place.
-function AdminGateCard({ gate }: { gate: SqlAdminGate }) {
+function SqlGateCard({ gate }: { gate: SqlAdminGate }) {
   return (
-    <Card className={gateCard}>
-      <Alert variant="warning">
-        <div className={gateBody}>
-          <strong>SQL console is locked — admin token required.</strong>
-          <p className={gateText}>
-            {gate === 'unconfigured'
-              ? 'This backend has no ADMIN_TOKEN configured, so it rejects every SQL console request by design (the console executes raw SQL and fails closed). Start the server with a token set — for example:'
-              : 'This backend requires an admin token, and this browser has none (or a wrong one) stored. Open the settings dialog (⚙️ RPC, top right), enter the server\u2019s ADMIN_TOKEN in the Admin token section, and save.'}
-          </p>
-          {gate === 'unconfigured' && (
-            <code className={gateCode}>ADMIN_TOKEN=your-local-secret pnpm dev:server</code>
-          )}
-          <p className={gateText}>
-            {gate === 'unconfigured'
-              ? 'Then store the same token in this browser via ⚙️ RPC → Admin token, reload this page, and the console unlocks.'
-              : 'The token is stored in this browser only and is sent as the x-admin-token header on every console request.'}
-          </p>
-        </div>
-      </Alert>
-    </Card>
+    <AdminGateCard title="SQL console is locked — admin token required.">
+      <p className={gateText}>
+        {gate === 'unconfigured'
+          ? 'This backend has no ADMIN_TOKEN configured, so it rejects every SQL console request by design (the console executes raw SQL and fails closed). Start the server with a token set — for example:'
+          : 'This backend requires an admin token, and this browser has none (or a wrong one) stored. Open the settings dialog (⚙️ RPC, top right), enter the server\u2019s ADMIN_TOKEN in the Admin token section, and save.'}
+      </p>
+      {gate === 'unconfigured' && (
+        <code className={gateCode}>ADMIN_TOKEN=your-local-secret pnpm dev:server</code>
+      )}
+      <p className={gateText}>
+        {gate === 'unconfigured'
+          ? 'Then store the same token in this browser via ⚙️ RPC → Admin token, reload this page, and the console unlocks.'
+          : 'The token is stored in this browser only and is sent as the x-admin-token header on every console request.'}
+      </p>
+    </AdminGateCard>
   );
-}
-
-// The run outcomes that are not results: attribution for a missing
-// backend (the established self-help card), the limiter's wait made
-// explicit, and any other failure verbatim — a 400 carries the backend's
-// real DuckDB error, the most useful text on this page for the operator
-// who typed the query.
-function RunErrorNotice({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  if (isBackendUnreachable(error)) {
-    return <BackendOfflineState onRetryConnection={onRetry} />;
-  }
-  if (error instanceof ApiError && error.status === 429) {
-    const wait = rateLimitWaitSeconds(error);
-    return (
-      <Alert variant="warning">
-        Rate limited — the console allows 6 queries per minute.{' '}
-        {wait !== null ? `Retry in ${wait}s.` : error.message}
-      </Alert>
-    );
-  }
-  return <Alert variant="danger">{errorMessage(error, 'Query failed.')}</Alert>;
 }
 
 function SqlResults({ result }: { result: SqlQueryResult }) {
@@ -380,6 +338,16 @@ export default function SqlConsole() {
   const [running, setRunning] = useState(false);
   const [history, setHistory] = useState<string[]>(readSqlHistory);
 
+  // Backend-offline recovery: both retry paths re-run service discovery
+  // before refetching — a plain retry fast-fails while the API base is
+  // unset (util/useReconnectRefetch owns the idiom). One instance per
+  // recovery target: the schema sidebar refetches tables, the run-error
+  // notice re-runs the operator's last query.
+  const {
+    handleRetryConnection: retryTablesConnection,
+    retryingConnection: retryingTablesConnection,
+  } = useReconnectRefetch(() => void tables.refetch());
+
   // Whichever endpoint reported the gate first speaks for the whole page:
   // the browser token and the server configuration are page-global facts.
   const gate = adminGateFromError(runError) ?? adminGateFromError(tables.error);
@@ -406,6 +374,11 @@ export default function SqlConsole() {
     }
   };
 
+  const {
+    handleRetryConnection: retryRunConnection,
+    retryingConnection: retryingRunConnection,
+  } = useReconnectRefetch(() => void runQuery());
+
   const handleEditorKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault();
@@ -424,7 +397,7 @@ export default function SqlConsole() {
           chainInfo="Read-only SELECT/WITH queries against this explorer's own DuckDB — every chain's indexed rows in one database, not a per-chain view or per-chain event files. Results cap at 500 rows."
         />
         {gate ? (
-          <AdminGateCard gate={gate} />
+          <SqlGateCard gate={gate} />
         ) : (
           <div className={consoleLayout}>
             <aside className={sidebar} aria-label="Database schema">
@@ -433,7 +406,10 @@ export default function SqlConsole() {
                 <p className={sidebarNote}>Loading schema…</p>
               ) : tables.error ? (
                 isBackendUnreachable(tables.error) ? (
-                  <BackendOfflineState onRetryConnection={() => void tables.refetch()} />
+                  <BackendOfflineState
+                    onRetryConnection={() => void retryTablesConnection()}
+                    retryConnectionPending={retryingTablesConnection}
+                  />
                 ) : (
                   <div>
                     <p className={sidebarNote}>
@@ -493,7 +469,13 @@ export default function SqlConsole() {
 
               {runError !== null && (
                 <div className={runErrorBox} role="alert">
-                  <RunErrorNotice error={runError} onRetry={() => void runQuery()} />
+                  <AdminErrorNotice
+                    error={runError}
+                    onRetryConnection={() => void retryRunConnection()}
+                    retryConnectionPending={retryingRunConnection}
+                    rateCopy="the console allows 6 queries per minute."
+                    fallbackCopy="Query failed."
+                  />
                 </div>
               )}
 

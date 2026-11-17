@@ -130,7 +130,7 @@ const formRow = css`
 `;
 
 const addErrorStyle = css`
-  color: var(--haze-color-danger, #d33);
+  color: var(--haze-color-danger);
   font-size: var(--haze-text-xs);
   margin-top: var(--haze-space-2);
 `;
@@ -196,7 +196,7 @@ const offlineCard = css`
 const serverErrorRow = css`
   margin-top: var(--haze-space-2);
   font-size: var(--haze-text-xs);
-  color: var(--haze-color-danger, #d33);
+  color: var(--haze-color-danger);
 `;
 
 const labelField = css`
@@ -219,7 +219,7 @@ const webhookField = css`
 const discordHint = css`
   margin-top: var(--haze-space-2);
   font-size: var(--haze-text-xs);
-  color: var(--haze-color-primary, #5865f2);
+  color: var(--haze-color-primary);
 `;
 
 const entryMain = css`
@@ -236,7 +236,7 @@ const webhookMeta = css`
 `;
 
 const webhookStatusFailed = css`
-  color: var(--haze-color-danger, #d33);
+  color: var(--haze-color-danger);
 `;
 
 const cursorMeta = css`
@@ -256,7 +256,7 @@ const gapRow = css`
   padding: var(--haze-space-2) 0;
   border-bottom: 1px solid var(--haze-color-border);
   font-size: var(--haze-text-xs);
-  color: var(--haze-color-warning, #a80);
+  color: var(--haze-color-warning);
 
   &:last-child {
     border-bottom: none;

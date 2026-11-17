@@ -2527,3 +2527,68 @@ pnpm typecheck           # tsc --noEmit
   rename (SearchService vs Search view genuinely consume different
   entities). All verified: tsc 0 errors, eslint 0 errors (111 warnings,
   baseline), `vitest --changed --maxWorkers=4` green, `pnpm build` green.
+
+- **2026-11-18 duplication review fix wave round 15 (4 read-only scouts +
+  Main-sequenced fixes)** — 22 findings adjudicated (12 fixed, 10
+  skipped/deliberate); net −98 lines / 23 files. All verified: tsc 0
+  errors, eslint 0 errors (114 warnings = baseline + 3 react-refresh from
+  the new shared module, the internalTxnsShared precedent), `vitest
+  --changed --maxWorkers=4` 124 files / 1540 tests green + the 4 MCP
+  suites (NOT selected by --changed — run mcp{Server,Rpc,Abi,Rest} by
+  name, one positional per invocation), `pnpm build` green, live browser
+  smoke on the built bundle via the standalone server (throwaway DuckDB):
+  /sql strict-gate card renders all four copy elements through the shared
+  shell, the schema sidebar renders the offline card with its working
+  Retry-connection path, /ops renders every dashboard card with zero
+  console errors beyond the pre-pin discovery probes. **New canonicals** —
+  `util/useReconnectRefetch.ts` (the BackendOfflineState recovery idiom:
+  guard flag → discovery reconnect → refetch only when a backend answers;
+  previously hand-rolled in Contract + Signatures + RouterError) and
+  `views/adminConsoleShared.tsx` (`AdminGateCard` title+children shell,
+  `AdminErrorNotice` offline/429/fallback three-way, the gate css trio —
+  consumed by Ops + Sql whose local twins diverged). **Real UX-bug class
+  fixed (scout found 1 of 3; Main's re-verification found the other 2)**:
+  three sites passed a PLAIN refetch as `BackendOfflineState
+  onRetryConnection` (Sql schema sidebar, Sql RunErrorNotice, Ops
+  SummaryErrorNotice) — the exact fast-fail the pattern's own comments
+  forbid; all three now run the discovery reconnect first. **Type-drift
+  trap closed** — `BlockTag` was defined twice with different member sets
+  (types/events 4-member vs mcp/rpc 5-member re-spelled, the round-8
+  formatAddress class): mcp now imports the canonical and extends it with
+  viem's `'pending'`, and the three zod enum re-spellings in mcp/tools
+  share one `MCP_BLOCK_TAGS` const `satisfies readonly BlockTag[]`.
+  **Dead code deleted** — `decodeRevertReason` (zero prod importers; its
+  test describe + the `customErrorAbi` fixture went with it; two
+  describeRevertData doc-comments that referenced the wrapper by name
+  reworded), `SHRINKABLE_PROVIDER_ERROR_RE`'s export (test now exercises
+  `isShrinkableProviderError`, the public surface), stats.ts's pointless
+  `[]`+push-spread copy. **Cosmetic honesty** — six off-palette hex
+  fallbacks dropped (Watchlist #d33/#5865f2/#a80 ×5, Detail #374151 — the
+  tokens are always defined, and the fallback values matched neither
+  palette). **Doc-truth** — CONFIG.md's `AUTO_INIT` row (references
+  `src/config/zero-config.ts`, deleted in the 2026-11-09 wave) removed;
+  `db:*` scripts-family listing → `db:generate`; the user-facing Ops
+  watch-unavailable hint no longer prescribes the nonexistent `pnpm
+  db:migrate` (migrations apply at boot — hint + opsView pin updated);
+  database/README.md dev-workflow step 3 deleted (same dead command);
+  README test:integration table row spacing. **Skipped (deliberate)** —
+  mcp/rest.ts's fetch variant (documented envelope-aware divergence, MCP
+  process isolation), labels/watch body-parser twins (~8 shared lines
+  under genuinely divergent required-vs-optional label semantics with
+  wire-pinned error copy), startupChecks' 72-char rule re-derivation
+  (no-payoff), logger.ts string-join (Hono middleware convention),
+  serialization.ts's server/logger import (documented deep-import-only),
+  KNOWN_ROUTERS test-export, specs/001-abi historical quickstart (banner
+  precedent), theme.css dark-palette ×2 (plain CSS cannot dedupe;
+  documented). **Rules pinned**: (1) a view that adopts
+  `useReconnectRefetch` now requires a `ServiceDiscoveryContext` provider
+  — test harnesses that never mocked '@/hooks/ServiceDiscoveryContext'
+  crash with an empty body (the 4 Ops/Sql files gained the
+  contractPage-pattern hoisted `mockReconnect` stub, and the
+  offline-retry test now resolves a service and awaits the refetch);
+  (2) multi-line vi.mock factories inserted by script MUST be re-read
+  after insertion — one dropped `}` produced a PARSE_ERROR that
+  masqueraded as a content mystery for a full debug cycle (nl -ba first,
+  believe the line numbers); (3) `vitest --changed` did NOT select the
+  MCP suites for src/mcp changes — name them explicitly, one positional
+  per invocation (the AND-filter gotcha again).

@@ -7,10 +7,7 @@
  * shrinkable (archive/permanent class — shrinking cannot help there).
  */
 import { describe, it, expect } from 'vitest';
-import {
-  SHRINKABLE_PROVIDER_ERROR_RE,
-  isShrinkableProviderError,
-} from '@/utils/providerErrors';
+import { isShrinkableProviderError } from '@/utils/providerErrors';
 
 describe('isShrinkableProviderError', () => {
   it('matches provider range-cap and throttle shapes', () => {
@@ -52,8 +49,8 @@ describe('isShrinkableProviderError', () => {
     expect(isShrinkableProviderError(null)).toBe(false);
   });
 
-  it('is case-insensitive via the exported regex', () => {
-    expect(SHRINKABLE_PROVIDER_ERROR_RE.test('Rate Limit Exceeded')).toBe(true);
-    expect(SHRINKABLE_PROVIDER_ERROR_RE.test('Request Timed Out')).toBe(true);
+  it('is case-insensitive', () => {
+    expect(isShrinkableProviderError(new Error('Rate Limit Exceeded'))).toBe(true);
+    expect(isShrinkableProviderError(new Error('Request Timed Out'))).toBe(true);
   });
 });

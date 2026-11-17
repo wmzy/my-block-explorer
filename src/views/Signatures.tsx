@@ -14,7 +14,6 @@
 // signature exists. Name fragments are NOT resolvable by the backend
 // (exact-selector lookups only), so a classified name degrades to an
 // explicit explanation instead of a silently wrong query.
-import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { css } from '@linaria/core';
 import { useDebouncedQueryParam } from '@/util/useDebouncedQueryParam';
@@ -28,7 +27,7 @@ import { Button } from '@/components/ui/Button';
 import { BackendOfflineState, EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
-import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
+import { useReconnectRefetch } from '@/util/useReconnectRefetch';
 import { useSignatureLookup } from '@/services/signatures';
 import type { ResolvedSignatures, SignatureLookup } from '@/services/signatures';
 import { CopyButton } from '@/components/ui/CopyButton';
@@ -367,19 +366,9 @@ export default function SignaturesView() {
 
   // Backend-offline recovery (Contract view pattern): a plain Retry would
   // fast-fail while the API base is unset, so the offline state re-runs
-  // service discovery first and re-asks the lookup once a service is back.
-  const { reconnect } = useServiceDiscovery();
-  const [retryingConnection, setRetryingConnection] = useState(false);
-  const handleRetryConnection = async () => {
-    if (retryingConnection) return;
-    setRetryingConnection(true);
-    try {
-      const service = await reconnect();
-      if (service) void lookup.refetch();
-    } finally {
-      setRetryingConnection(false);
-    }
-  };
+  // service discovery first and re-asks the lookup once a service is back
+  // (util/useReconnectRefetch owns the idiom).
+  const { handleRetryConnection, retryingConnection } = useReconnectRefetch(() => void lookup.refetch());
 
   return (
     <>

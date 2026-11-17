@@ -1,10 +1,9 @@
 import { css } from '@linaria/core';
 import { Title } from 'haze-ui';
 import { TypedLink, useMatched } from '@native-router/react';
-import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { BackendOfflineState } from '@/components/ui/ErrorState';
-import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
+import { useReconnectRefetch } from '@/util/useReconnectRefetch';
 import { ApiError } from '@/util/apiError';
 import { isBackendUnreachable } from '@/util/http';
 import { errorMessage } from '@/utils/errorHandler';
@@ -57,8 +56,11 @@ export default function RouterError({ error }: { error: unknown }) {
   // own error state could render — this slot is the first place the user
   // lands. Attribute those to the missing backend with the self-help state
   // instead of the generic "Something went wrong" card and its raw message.
-  const { reconnect } = useServiceDiscovery();
-  const [retryPending, setRetryPending] = useState(false);
+  // A live backend re-runs this route's loader from a clean slate via
+  // reload; still nothing → stay on the offline state (no reload loop).
+  const { handleRetryConnection, retryingConnection } = useReconnectRefetch(
+    () => window.location.reload(),
+  );
 
   // Recover into the chain the failed navigation was on. Render-phase
   // errors still sit inside the crashed route's matched context (absent
@@ -111,25 +113,13 @@ export default function RouterError({ error }: { error: unknown }) {
   }
 
   if (isBackendUnreachable(error)) {
-    const handleRetryConnection = () => {
-      setRetryPending(true);
-      void reconnect().then(service => {
-        // A live backend re-runs this route's loader from a clean slate;
-        // still nothing → stay on the offline state (no reload loop).
-        if (service !== null) {
-          window.location.reload();
-        } else {
-          setRetryPending(false);
-        }
-      });
-    };
     return (
       <div className={page}>
         <Card variant="outlined">
           <CardContent>
             <BackendOfflineState
-              onRetryConnection={handleRetryConnection}
-              retryConnectionPending={retryPending}
+              onRetryConnection={() => void handleRetryConnection()}
+              retryConnectionPending={retryingConnection}
             />
           </CardContent>
         </Card>

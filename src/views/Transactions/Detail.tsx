@@ -679,7 +679,7 @@ const notFoundListStyle = css`
   padding-left: 20px;
   display: grid;
   gap: 8px;
-  color: var(--haze-color-text, #374151);
+  color: var(--haze-color-text);
 `;
 
 // Inline link-look button for the not-found card's recovery paths: real

@@ -21,7 +21,7 @@ import { parseSlotNumber } from '@/utils/storageSlots';
 import { addressVerdict, codeVerdict } from '@/utils/address';
 import { errorMessage } from '@/utils/errorHandler';
 import { coerceArgs, parseFunctionFragment } from './abi';
-import type { BlockRef, BlockTag, ChainMeta, RpcReader } from './rpc';
+import { MCP_BLOCK_TAGS, type BlockRef, type BlockTag, type ChainMeta, type RpcReader } from './rpc';
 import { McpApiError, McpBackendUnreachableError, type ExplorerApi } from './rest';
 
 export type McpDeps = {
@@ -168,7 +168,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
         chainId: chainIdParam,
         blockNumber: z.number().int().nonnegative().optional(),
         blockHash: z.string().startsWith('0x').optional(),
-        blockTag: z.enum(['latest', 'earliest', 'pending', 'safe', 'finalized']).optional(),
+        blockTag: z.enum(MCP_BLOCK_TAGS).optional(),
         includeTransactions: z
           .boolean()
           .describe('Include full transaction objects instead of hashes (heavier)')
@@ -352,7 +352,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
           .describe('Solidity function signature, e.g. "function balanceOf(address account) view returns (uint256)"'),
         args: z.array(z.unknown()).describe('Positional arguments as JSON values').optional(),
         blockNumber: z.number().int().nonnegative().optional(),
-        blockTag: z.enum(['latest', 'earliest', 'pending', 'safe', 'finalized']).optional(),
+        blockTag: z.enum(MCP_BLOCK_TAGS).optional(),
       },
       annotations: read_only,
     },
@@ -501,7 +501,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
         address: addressParam,
         slot: z.string().describe('Slot as decimal or 0x-hex (64-nibble zero-padded forms accepted)'),
         blockNumber: z.number().int().nonnegative().optional(),
-        blockTag: z.enum(['latest', 'earliest', 'pending', 'safe', 'finalized']).optional(),
+        blockTag: z.enum(MCP_BLOCK_TAGS).optional(),
       },
       annotations: read_only,
     },

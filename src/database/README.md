@@ -340,10 +340,7 @@ npx drizzle-kit generate
 # 2. Clean up database files (if needed)
 rm -f data/blockchain.db
 
-# 3. Run migrations (the adapter also auto-migrates on every connect)
-pnpm db:migrate
-
-# 4. Verify table structure
+# 3. Verify table structure
 npx tsx -e "
 import { db } from './src/database/drizzle.js';
 const result = await db.execute('SHOW TABLES');

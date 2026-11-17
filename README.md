@@ -177,7 +177,7 @@ data with the in-app SQL console (`/sql`) or the DuckDB CLI.
 ```bash
 pnpm test            # Vitest (all)
 pnpm test:unit       # tests/unit only
-pnpm test:integration# tests/integration only
+pnpm test:integration  # tests/integration only
 pnpm typecheck       # tsc --noEmit
 pnpm lint            # ESLint
 ```

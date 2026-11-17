@@ -16,7 +16,7 @@
 // (backend offline, admin gate, rate limit) carry retry affordances too.
 import { css, cx } from '@linaria/core';
 import { useChainlessNav } from '@/views/chainNav';
-import { Alert, Dialog, useToast } from 'haze-ui';
+import { Dialog, useToast } from 'haze-ui';
 import { useControl } from 'react-use-control';
 import { useState } from 'react';
 
@@ -24,7 +24,6 @@ import TopNavigation from '@/components/TopNavigation';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { DataTable } from '@/components/ui/DataTable';
-import { BackendOfflineState } from '@/components/ui/ErrorState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { useOpsSummary, type OpsMeta, type OpsSummary } from '@/services/opsSummary';
 import {
@@ -34,7 +33,8 @@ import {
   type UninstallPreview,
 } from '@/services/opsSummary';
 import { adminGateFromError, rateLimitWaitSeconds } from '@/util/adminGate';
-import { ApiError } from '@/util/apiError';
+import { useReconnectRefetch } from '@/util/useReconnectRefetch';
+import { AdminErrorNotice, AdminGateCard, gateText } from '@/views/adminConsoleShared';
 import { toastCopy } from '@/util/clipboard';
 import { isBackendUnreachable } from '@/util/http';
 import { errorMessage } from '@/utils/errorHandler';
@@ -234,22 +234,6 @@ const emptyNote = css`
   font-size: var(--haze-text-sm);
 `;
 
-const gateCard = css`
-  max-width: 640px;
-`;
-
-const gateBody = css`
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--haze-space-2);
-`;
-
-const gateText = css`
-  margin: 0;
-  line-height: var(--haze-leading-relaxed);
-`;
-
 const pageError = css`
   max-width: 640px;
 `;
@@ -274,47 +258,19 @@ function UnavailableSection({ hint, onRetry }: { hint: string; onRetry: () => vo
 // has a token, this browser does not); the 'unconfigured' face cannot come
 // from this endpoint's own gate and says so honestly instead of inventing a
 // setup step that would not fix it.
-function AdminGateCard({ gate }: { gate: OpsAdminGate }) {
+function OpsGateCard({ gate }: { gate: OpsAdminGate }) {
   return (
-    <Card className={gateCard}>
-      <Alert variant="warning">
-        <div className={gateBody}>
-          <strong>Ops dashboard is locked — admin token required.</strong>
-          <p className={gateText}>
-            {gate === 'unauthorized'
-              ? 'This backend has an ADMIN_TOKEN configured, so the ops summary requires it — and this browser has none (or a wrong one) stored. Open the settings dialog (⚙️ RPC, top right), enter the server\u2019s ADMIN_TOKEN in the Admin token section, and save.'
-              : 'The ops summary is open in zero-config local sessions, so this 403 did not come from its own gate — something stricter is answering for this backend. Storing the operator\u2019s ADMIN_TOKEN in this browser (⚙️ RPC → Admin token) and retrying is the fastest way forward.'}
-          </p>
-          <p className={gateText}>
-            The token is stored in this browser only and is sent as the x-admin-token header on
-            every ops request.
-          </p>
-        </div>
-      </Alert>
-    </Card>
-  );
-}
-
-// Page-level failure of the single summary request: attribution for a
-// missing backend (the established self-help card), the limiter's wait made
-// explicit, anything else verbatim.
-function SummaryErrorNotice({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  if (isBackendUnreachable(error)) {
-    return <BackendOfflineState onRetryConnection={onRetry} />;
-  }
-  if (error instanceof ApiError && error.status === 429) {
-    const wait = rateLimitWaitSeconds(error);
-    return (
-      <Alert variant="warning">
-        Rate limited — the ops summary allows 6 requests per minute.{' '}
-        {wait !== null ? `Retry in ${wait}s.` : error.message}
-      </Alert>
-    );
-  }
-  return (
-    <Alert variant="danger">
-      {errorMessage(error, 'Failed to load the ops summary.')}
-    </Alert>
+    <AdminGateCard title="Ops dashboard is locked — admin token required.">
+      <p className={gateText}>
+        {gate === 'unauthorized'
+          ? 'This backend has an ADMIN_TOKEN configured, so the ops summary requires it — and this browser has none (or a wrong one) stored. Open the settings dialog (⚙️ RPC, top right), enter the server\u2019s ADMIN_TOKEN in the Admin token section, and save.'
+          : 'The ops summary is open in zero-config local sessions, so this 403 did not come from its own gate — something stricter is answering for this backend. Storing the operator\u2019s ADMIN_TOKEN in this browser (⚙️ RPC → Admin token) and retrying is the fastest way forward.'}
+      </p>
+      <p className={gateText}>
+        The token is stored in this browser only and is sent as the x-admin-token header on
+        every ops request.
+      </p>
+    </AdminGateCard>
   );
 }
 
@@ -460,7 +416,7 @@ function WatchCard({ summary, onRetry }: { summary: OpsSummary; onRetry: () => v
       <CardContent>
         {'error' in watch ? (
           <UnavailableSection
-            hint="Watch status unavailable — the watch_subscriptions table could not be read (a database from before the webhook column needs pnpm db:migrate)."
+            hint="Watch status unavailable — the watch_subscriptions table could not be read (migrations apply at server boot; restart the backend, and check the server logs if this persists)."
             onRetry={onRetry}
           />
         ) : watch.subscriptions.length === 0 ? (
@@ -856,6 +812,13 @@ export default function Ops() {
   const summary = useOpsSummary();
   const retry = () => void summary.refetch();
 
+  // Backend-offline recovery for the page-level failure state: a plain
+  // retry fast-fails while the API base is unset, so the notice's button
+  // re-runs service discovery first (util/useReconnectRefetch).
+  const { handleRetryConnection, retryingConnection } = useReconnectRefetch(() =>
+    void summary.refetch(),
+  );
+
   // One-click diagnostics for bug reports: the already-fetched summary,
   // serialized whole (per-section verdicts included) to the clipboard.
   // Same helper + toast contract as the copy sites (util/clipboard toastCopy).
@@ -878,10 +841,16 @@ export default function Ops() {
           chainInfo="Operator overview of this backend — storage, indexing, watch subscriptions, deep scans and rate limiting. Not chain-scoped: it reads the main DuckDB and the data/ directory, like the SQL console."
         />
         {gate !== null ? (
-          <AdminGateCard gate={gate} />
+          <OpsGateCard gate={gate} />
         ) : summary.error !== undefined ? (
           <div className={pageError} role="alert">
-            <SummaryErrorNotice error={summary.error} onRetry={retry} />
+            <AdminErrorNotice
+              error={summary.error}
+              onRetryConnection={() => void handleRetryConnection()}
+              retryConnectionPending={retryingConnection}
+              rateCopy="the ops summary allows 6 requests per minute."
+              fallbackCopy="Failed to load the ops summary."
+            />
           </div>
         ) : summary.data === undefined ? (
           <Card>

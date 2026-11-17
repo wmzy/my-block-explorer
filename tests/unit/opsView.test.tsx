@@ -20,6 +20,14 @@ const { mockUseOpsSummary, mockFetchPreview, mockRequestUninstall } = vi.hoisted
   mockRequestUninstall: vi.fn(),
 }));
 
+// The page now recovers from backend-offline failures through the
+// discovery layer's reconnect (util/useReconnectRefetch); stub the context
+// hook like the contract-page family does.
+const { mockReconnect } = vi.hoisted(() => ({ mockReconnect: vi.fn() }));
+
+vi.mock('@/hooks/ServiceDiscoveryContext', () => ({
+  useServiceDiscovery: () => ({ reconnect: mockReconnect }),
+}));
 vi.mock('@/components/TopNavigation', () => ({
   default: () => <div data-testid="top-navigation" />,
 }));
@@ -201,7 +209,7 @@ describe('honest degraded and empty states', () => {
     await renderOps();
 
     expect(screen.getByText(/Watch status unavailable/)).toBeInTheDocument();
-    expect(screen.getByText(/pnpm db:migrate/)).toBeInTheDocument();
+    expect(screen.getByText(/migrations apply at server boot/)).toBeInTheDocument();
     // Healthy sections still render alongside the degraded one.
     expect(screen.getByText('1.2.3')).toBeInTheDocument();
     expect(screen.getByText(/2 completed, 1 error/)).toBeInTheDocument();
@@ -279,8 +287,12 @@ describe('page-level failure states', () => {
     await renderOps();
 
     expect(await screen.findByText(/Backend offline/)).toBeInTheDocument();
+    // The button re-runs service discovery first; a backend answering is
+    // what triggers the summary refetch (the recovery idiom the old plain
+    // refetch fast-failed on).
+    mockReconnect.mockResolvedValue({ baseUrl: 'http://127.0.0.1:8201' });
     fireEvent.click(screen.getByRole('button', { name: 'Retry connection' }));
-    expect(refetch).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
   });
 
   it('surfaces a 429 with its wait', async () => {

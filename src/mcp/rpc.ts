@@ -18,12 +18,23 @@ import { createPublicClient, http, toHex, type Abi, type AbiFunction, type Addre
 import { getChainInfo } from '@/config/chains';
 import { listCustomChainIds, registerCustomChain, removeCustomChain, type CustomChain } from '@/config/customChains';
 import type { ExplorerApi } from './rest';
+import type { BlockTag as ExplorerBlockTag } from '@/types/events';
 
-export type BlockTag = 'latest' | 'earliest' | 'pending' | 'safe' | 'finalized';
+// viem accepts one more tag than the explorer's range API ('pending').
+// The canonical four-member BlockTag lives in types/events; extending it
+// here (instead of re-spelling the literal) keeps the two from drifting.
+export type BlockTag = ExplorerBlockTag | 'pending';
 
-export type BlockRef =
-  | { blockNumber: number }
-  | { blockTag: 'latest' | 'earliest' | 'pending' | 'safe' | 'finalized' };
+/** Runtime literal for the tools' zod input schemas — pinned to BlockTag. */
+export const MCP_BLOCK_TAGS = [
+  'latest',
+  'earliest',
+  'pending',
+  'safe',
+  'finalized',
+] as const satisfies readonly BlockTag[];
+
+export type BlockRef = { blockNumber: number } | { blockTag: BlockTag };
 
 /** Where the URL we are dialing came from — surfaced to tool callers. */
 export type RpcSource = 'user-config' | 'custom-chain' | 'viem-default';

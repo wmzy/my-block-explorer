@@ -23,6 +23,14 @@ const { mockUseOpsSummary, mockFetchPreview, mockRequestUninstall } = vi.hoisted
   mockRequestUninstall: vi.fn(),
 }));
 
+// The page now recovers from backend-offline failures through the
+// discovery layer's reconnect (util/useReconnectRefetch); stub the context
+// hook like the contract-page family does.
+const { mockReconnect } = vi.hoisted(() => ({ mockReconnect: vi.fn() }));
+
+vi.mock('@/hooks/ServiceDiscoveryContext', () => ({
+  useServiceDiscovery: () => ({ reconnect: mockReconnect }),
+}));
 vi.mock('@/components/TopNavigation', () => ({
   default: () => <div data-testid="top-navigation" />,
 }));

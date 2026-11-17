@@ -9,7 +9,6 @@ import {
 } from 'viem';
 import {
   decodeFunctionCall,
-  decodeRevertReason,
   describeRevertData,
   extractRevertData,
   formatArgValue,
@@ -33,9 +32,6 @@ const erc20Abi: Abi = parseAbi([
 ]);
 const approveOnlyAbi: Abi = parseAbi([
   'function approve(address spender, uint256 amount) returns (bool)',
-]);
-const customErrorAbi: Abi = parseAbi([
-  'error InsufficientBalance(uint256 available, uint256 required)',
 ]);
 
 // ABI-encoded Error(string) payload, exactly what Solidity's revert("…") emits.
@@ -99,39 +95,6 @@ describe('decodeFunctionCall', () => {
 
   it('returns null for empty 0x input', () => {
     expect(decodeFunctionCall('0x', erc20Abi)).toBeNull();
-  });
-});
-
-describe('decodeRevertReason', () => {
-  it('decodes Error(string) payloads to the plain message', () => {
-    expect(decodeRevertReason(errorStringData)).toBe('Insufficient balance');
-  });
-
-  it('maps documented Panic codes to their cause', () => {
-    expect(decodeRevertReason(panicData(0x01))).toContain('assert failed');
-    expect(decodeRevertReason(panicData(0x11))).toContain('arithmetic overflow/underflow');
-    expect(decodeRevertReason(panicData(0x12))).toContain('division by zero');
-  });
-
-  it('labels undocumented Panic codes as unknown', () => {
-    expect(decodeRevertReason(panicData(0x99))).toBe('Panic 0x99: unknown panic code');
-  });
-
-  it('decodes custom errors from the ABI with decimal arg display', () => {
-    const data = encodeErrorResult({
-      abi: customErrorAbi,
-      errorName: 'InsufficientBalance',
-      args: [100n, 250n],
-    });
-    expect(decodeRevertReason(data, customErrorAbi)).toBe('InsufficientBalance(100, 250)');
-  });
-
-  it('returns null for an unknown selector when no ABI is given', () => {
-    expect(decodeRevertReason(`0xdeadbeef${'0'.repeat(120)}`)).toBeNull();
-  });
-
-  it('returns null for an unknown selector when the ABI lacks the error', () => {
-    expect(decodeRevertReason(`0xdeadbeef${'0'.repeat(120)}`, erc20Abi)).toBeNull();
   });
 });
 
@@ -230,10 +193,10 @@ describe('describeRevertData', () => {
     return description;
   };
 
-  it('decodes Error(string) without an ABI and keeps its display identical to decodeRevertReason', () => {
+  it('decodes Error(string) without an ABI and renders the plain message', () => {
     const description = described(errorStringData);
     expect(description).toEqual({ kind: 'string', message: 'Insufficient balance' });
-    expect(formatRevertDescription(description)).toBe(decodeRevertReason(errorStringData));
+    expect(formatRevertDescription(description)).toBe('Insufficient balance');
   });
 
   it('decodes Panic(uint256) without an ABI with the documented code table', () => {
@@ -243,7 +206,7 @@ describe('describeRevertData', () => {
       code: 0x11n,
       description: 'arithmetic overflow/underflow',
     });
-    expect(formatRevertDescription(overflow)).toBe(decodeRevertReason(panicData(0x11)));
+    expect(formatRevertDescription(overflow)).toBe('Panic 0x11: arithmetic overflow/underflow');
 
     const assert = described(panicData(0x01));
     expect(assert).toEqual({ kind: 'panic', code: 1n, description: 'assert failed' });

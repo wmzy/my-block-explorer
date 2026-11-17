@@ -17,7 +17,7 @@
 
 import { errorMessage } from './errorHandler';
 
-export const SHRINKABLE_PROVIDER_ERROR_RE =
+const SHRINKABLE_PROVIDER_ERROR_RE =
   /rate.?limit|too many requests|429|exceed|limit|timeout|timed out|econnreset|econnrefused|socket hang up|network|fetch failed/i;
 
 export const isShrinkableProviderError = (err: unknown): boolean =>

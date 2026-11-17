@@ -22,9 +22,8 @@ const app = new Hono();
 app.get('/stats/overview', async c => {
   try {
     const popularChainIds = POPULAR_CHAINS.map(chain => chain.id);
-    const chainStats = [];
 
-    const results = await Promise.all(
+    const chainStats = await Promise.all(
       popularChainIds.map(async chainId => {
         // Indexed counts come from DuckDB and BOTH services throw when the
         // database cannot be read. Those throws used to be caught into a
@@ -61,8 +60,6 @@ app.get('/stats/overview', async c => {
         };
       }),
     );
-
-    chainStats.push(...results);
 
     const connectedChains = chainStats.filter(ch => ch.rpcConnected).length;
     const indexedChains = chainStats.filter(ch => ch.isIndexed).length;

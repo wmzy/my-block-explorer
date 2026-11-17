@@ -65,22 +65,6 @@ export function decodeFunctionCall(inputData: string, abi: Abi): DecodedFunction
 }
 
 /**
- * Decode a raw revert payload into a readable reason string:
- * (a) `Error(string)` reverts — the Solidity `revert("…")` encoding,
- * (b) `Panic(uint256)` — mapped through the documented Solidity code table,
- * (c) custom errors declared in the provided ABI via decodeErrorResult.
- * Returns null when nothing decodes (unknown selector, truncated payload…).
- * Thin legacy wrapper over describeRevertData/formatRevertDescription — the
- * structured pair is the source of truth for all decoding.
- */
-export function decodeRevertReason(data: string, abi?: Abi): string | null {
-  const description = describeRevertData(data, abi);
-  // Legacy semantics: an unreadable payload is "no reason", not raw hex.
-  if (description === null || description.kind === 'unknown') return null;
-  return formatRevertDescription(description);
-}
-
-/**
  * Structured classification of a revert payload. `string`/`panic` need no
  * ABI (standard Solidity encodings); `custom` requires an ABI that declares
  * the error; `unknown` is any other well-formed selector-prefixed payload.
@@ -96,7 +80,7 @@ export type RevertDescription =
  * throwing. Empty '0x' (and payloads without a full 4-byte selector) are
  * NOT reverts — null, so callers can distinguish "no revert data" from
  * "revert data we cannot read". Standard Error(string)/Panic(uint256)
- * selectors decode without an ABI exactly like decodeRevertReason; every
+ * selectors decode without an ABI exactly like the structured classifier; every
  * other selector is decoded against the provided ABI via viem's
  * decodeErrorResult (which throws when nothing matches — the 'unknown'
  * fallback). Truncated/corrupt payloads of a known selector also land in
@@ -151,9 +135,8 @@ function panicDescription(code: bigint): string {
 
 /**
  * Display string for a RevertDescription: Error(string) keeps its plain
- * message, Panic keeps the exact `Panic 0xNN: cause` shape decodeRevertReason
- * has always produced (zero-ABI rendering stays byte-identical), custom
- * errors render as `Name(args)`, unknown payloads fall back to raw hex.
+ * message, Panic keeps the exact `Panic 0xNN: cause` shape, custom errors
+ * render as `Name(args)`, unknown payloads fall back to raw hex.
  */
 export function formatRevertDescription(description: RevertDescription): string {
   switch (description.kind) {

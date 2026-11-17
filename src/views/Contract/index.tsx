@@ -29,7 +29,7 @@ import {
   writeStorageItem,
 } from '@/util/storageAccess';
 import { CUSTOM_ABI_STORAGE_PREFIX } from '@/util/storageKeys';
-import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
+import { useReconnectRefetch } from '@/util/useReconnectRefetch';
 import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { parseChainIdParam } from '@/utils/chainParam';
@@ -1002,19 +1002,8 @@ export default function Contract() {
   // Backend-offline recovery: reuse the discovery layer's reconnect (the
   // same mechanism the connection badge uses) and refetch once a backend
   // answers — a plain Retry would just fast-fail again while the API base
-  // is unset.
-  const { reconnect } = useServiceDiscovery();
-  const [retryingConnection, setRetryingConnection] = useState(false);
-  const handleRetryConnection = async () => {
-    if (retryingConnection) return;
-    setRetryingConnection(true);
-    try {
-      const service = await reconnect();
-      if (service) void refetchSource();
-    } finally {
-      setRetryingConnection(false);
-    }
-  };
+  // is unset. The idiom lives in util/useReconnectRefetch.
+  const { handleRetryConnection, retryingConnection } = useReconnectRefetch(() => void refetchSource());
 
   // Chain switches replace the current entry via the shared Wave A helper,
   // keeping the address param so the same contract reloads on the target
