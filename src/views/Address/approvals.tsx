@@ -38,7 +38,7 @@ import { linkStyle } from '@/components/ui/DataTable';
 import { shimmerSweep } from '@/components/ui/skeleton';
 import { ApiError } from '@/util/apiError';
 import { get, longRunningApi, withSignal } from '@/util/http';
-import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
+import { bindQueryFn, createQueryCache, createQueryHook, ownResult } from '@/util/useQuery';
 import { cellText, formatDateTime, formatHash, formatNumber, formatRawUnits } from '@/utils/format';
 import { useTokenMetadata, type TokenMetadata } from '@/services/tokenMetadata';
 import { encodeRevokeIntent } from '@/views/Contract/revokeIntent';
@@ -573,7 +573,7 @@ export function ApprovalSection({ chainId, address }: ApprovalSectionProps): Rea
   // Cross-args guard (BalanceHistory pattern): the query layer's store
   // keeps the last settle across an args switch, so another chain's
   // payload is treated as absent.
-  const data = query.data?.chainId === chainId ? query.data : undefined;
+  const data = ownResult(query.data, { chainId });
 
   // Token metadata through the shared frontend cache: one aggregated
   // Multicall3 batch for the page's distinct tokens (never re-fetched on

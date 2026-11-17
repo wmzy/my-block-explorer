@@ -94,4 +94,27 @@ describe('GET .../storage/:slot decimal-slot validation', () => {
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({ error: 'invalid_slot' });
   });
+
+  // The hex regex's `*` quantifier used to accept bare '0x' (empty hex)
+  // and forward it to the RPC layer.
+  it('answers 400 for bare 0x (empty hex is not a slot)', async () => {
+    const res = await app.request(`${BASE}/0x`);
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_slot' });
+    expect(mocks.getClient).not.toHaveBeenCalled();
+  });
+
+  // Raw BigInt() accepted '+7', ' 7' and '0X10' (prefix-prefixed forms) —
+  // the junk class the canonical parseDecimalBigInt exists to reject.
+  it.each(['+7', '%207', '0X10', '0b101'])(
+    'answers 400 for BigInt-lenient decimal slot %s',
+    async slot => {
+      const res = await app.request(`${BASE}/${slot}`);
+
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toMatchObject({ error: 'invalid_slot' });
+      expect(mocks.getClient).not.toHaveBeenCalled();
+    },
+  );
 });

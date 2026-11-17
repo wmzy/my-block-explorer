@@ -806,7 +806,12 @@ const formatAddressCell = (address: string): string =>
 
 const formatTransactionHash = (hash: string): string => (hash ? formatHash(hash, 8) : 'N/A');
 
-const formatValue = (value?: string): string => {
+// Local name deliberately distinct from utils/format's formatValue: this
+// cell contract is 6 fixed decimals with a '<0.000001 ETH' floor and an
+// 'N/A' fallback — a same-name twin of the 4-decimal canonical silently
+// invites the wrong import (the round-8 same-name-different-semantics
+// trap).
+const formatEthCell = (value?: string): string => {
   if (!value) return 'N/A';
   try {
     const wei = BigInt(value);
@@ -1103,7 +1108,7 @@ export const EventRow = React.memo(({
             'N/A'
           )}
         </td>
-        <td className={cx(tableCell, valueCell)}>{formatValue(event.value)}</td>
+        <td className={cx(tableCell, valueCell)}>{formatEthCell(event.value)}</td>
         <td className={cx(tableCell, monoStyle)}>
           <a
             href={`/chain/${chainId}/tx/${event.transactionHash}`}

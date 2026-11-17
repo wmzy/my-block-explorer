@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { css } from '@linaria/core';
 import { SegmentedProgressBar } from '../ui/SegmentedProgressBar';
+import { LoadingState } from '../ui/LoadingState';
 import { toast } from 'haze-ui';
 import { get, post, del } from '@/util/http';
 import { ApiError } from '@/util/apiError';
@@ -1129,9 +1130,6 @@ export const IndexingRangeManager: React.FC<Props> = ({
     },
     [chainId, contractAddress, refetchRanges, onRefresh],
   );
-  const formatBlock = (block: bigint | number): string => {
-    return formatNumber(block);
-  };
   // Editing the gated form (or switching quick mode) invalidates the armed
   // confirmation: the next submit re-runs the precheck.
   const resetOverlapGate = useCallback((source: OverlapGate['source']) => {
@@ -1259,7 +1257,9 @@ export const IndexingRangeManager: React.FC<Props> = ({
         <div className={headerStyles}>
           <h3>Event Indexing Ranges</h3>
         </div>
-        <div className={emptyStateStyles}>Loading...</div>
+        {/* Shared panel loading primitive (the StoragePanel round-8
+            precedent) — the bare-text hand-roll carried no rationale. */}
+        <LoadingState />
       </div>
     );
   }
@@ -1278,7 +1278,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
               className={`${actionButtonStyles} primary`}
               onClick={handleCatchupToHead}
               disabled={actionLoading !== null}
-              title={`Catch up from block ${formatBlock(maxRangeToBlock)} to the head (${formatBlock(headBlock)})`}
+              title={`Catch up from block ${formatNumber(maxRangeToBlock)} to the head (${formatNumber(headBlock)})`}
             >
               {actionLoading === CATCHUP_ACTION_LOADING ? 'Catching up...' : 'Catch up to head'}
             </button>
@@ -1309,7 +1309,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
             <span className={stalenessDotStyles} />
             {stalenessGap === 0
               ? 'Up to date'
-              : `Indexed through block ${formatBlock(maxCurrentBlock)} - ${formatBlock(stalenessGap)} blocks behind head`}
+              : `Indexed through block ${formatNumber(maxCurrentBlock)} - ${formatNumber(stalenessGap)} blocks behind head`}
           </div>
         )
       )}
@@ -1332,8 +1332,8 @@ export const IndexingRangeManager: React.FC<Props> = ({
           <ul style={{ margin: '8px 0 0', paddingLeft: '16px' }}>
             {overlaps.map(o => (
               <li key={o.rangeId}>
-                Range #{o.rangeId}: blocks {formatBlock(o.overlapStart)} -{' '}
-                {formatBlock(o.overlapEnd)}
+                Range #{o.rangeId}: blocks {formatNumber(o.overlapStart)} -{' '}
+                {formatNumber(o.overlapEnd)}
                 <button
                   style={{
                     marginLeft: '8px',
@@ -1430,7 +1430,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
                       <span>{range.direction === 'forward' ? 'Forward' : 'Backward'}</span>
                     </span>
                     <span style={{ marginLeft: '8px' }}>
-                      #{formatBlock(range.fromBlock)} - {formatBlock(range.toBlock)}
+                      #{formatNumber(range.fromBlock)} - {formatNumber(range.toBlock)}
                     </span>
                   </div>
                   <div className="range-progress">
@@ -1447,8 +1447,8 @@ export const IndexingRangeManager: React.FC<Props> = ({
                       <>
                         Progress: {calculateProgress(range)}%
                         {range.direction === 'forward'
-                          ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
-                          : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
+                          ? `(${formatNumber(range.currentBlock)} / ${formatNumber(range.toBlock)})`
+                          : `(${formatNumber(range.fromBlock)} / ${formatNumber(range.currentBlock)})`}
                         {etaText !== null && ` — ${etaText}`}
                       </>
                     )}

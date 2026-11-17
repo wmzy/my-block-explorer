@@ -19,6 +19,7 @@ import { chainRedirect } from '@/views/chainNav';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
+import { ownResult } from '@/util/useQuery';
 import { formatNumber } from '@/utils/format';
 import { shimmerPulse } from '@/components/ui/skeleton';
 import { formatGwei } from '@/services/gasHistory';
@@ -626,7 +627,7 @@ function ChartsBody({ chainId }: { chainId: number }) {
   // the new chain's fetch runs, so another chain's result is treated as
   // absent — the page pulses instead of flashing chain A's series under
   // chain B's header.
-  const own = feed.data?.chainId === chainId ? feed.data : undefined;
+  const own = ownResult(feed.data, { chainId });
 
   if (own === undefined && feed.loading) {
     return (

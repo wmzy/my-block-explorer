@@ -6,6 +6,7 @@ import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
+import { parseDecimalBigInt } from '../utils/strictInteger';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 
 const logger = createLogger('storage-routes');
@@ -77,22 +78,21 @@ app.get('/chains/:chainId/contracts/:address/storage/:slot', async c => {
 
   let slot: `0x${string}`;
   if (slotParam.startsWith('0x')) {
-    if (!/^0x[0-9a-fA-F]*$/.test(slotParam)) {
+    // `+` not `*`: bare '0x' (the empty hex string) is not a slot. The
+    // canonical strict-shape family (strictInteger's hex-quantity regex)
+    // rejects it everywhere else.
+    if (!/^0x[0-9a-fA-F]+$/.test(slotParam)) {
       return respondError(c, 400, 'invalid_slot', 'Invalid slot: must be valid hex string');
     }
     slot = slotParam as `0x${string}`;
   } else {
-    // Non-hex slots are decimal integers; junk like 'abc' or '1.5' makes
-    // BigInt() throw, which would escape as a generic 500 — answer with
-    // the same 400 contract as the hex branch above.
-    let slotNumber: bigint;
-    try {
-      slotNumber = BigInt(slotParam);
-    } catch {
+    // Non-hex slots are strict decimal integers. Raw BigInt() would also
+    // accept '+7', surrounding whitespace and 0x/0o/0b prefixed forms —
+    // the exact junk class the canonical parseDecimalBigInt exists to
+    // reject; junk answers the same 400 contract as the hex branch.
+    const slotNumber = parseDecimalBigInt(slotParam);
+    if (slotNumber === null) {
       return respondError(c, 400, 'invalid_slot', 'Invalid slot: must be a decimal integer');
-    }
-    if (slotNumber < 0n) {
-      return respondError(c, 400, 'invalid_slot', 'Invalid slot: must be non-negative');
     }
     slot = `0x${slotNumber.toString(16)}`;
   }

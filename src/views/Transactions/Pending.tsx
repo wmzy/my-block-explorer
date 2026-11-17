@@ -50,6 +50,7 @@ import {
   type MempoolRenderUnit,
 } from '@/utils/mempoolAnalysis';
 import { cellText, formatHash, formatNativeDisplay, formatNumber } from '@/utils/format';
+import { ownResult } from '@/util/useQuery';
 import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { chainRedirect } from '@/views/chainNav';
@@ -275,7 +276,7 @@ function PendingBody({ chainId }: { chainId: number }) {
   // Cross-chain guard (gasHistory/chartStats pattern): the query layer's
   // result store keeps the last settle across a chain switch, so another
   // chain's result is treated as absent — no cross-chain flash.
-  const own = feed.data?.chainId === chainId ? feed.data : undefined;
+  const own = ownResult(feed.data, { chainId });
 
   // Conflict analysis over the entries the snapshot listed. All hooks sit
   // above the early returns below (rules of hooks); a non-ok result keeps

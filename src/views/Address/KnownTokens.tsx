@@ -26,6 +26,7 @@ import {
   type KnownTokenBalance,
 } from '@/services/knownTokenBalances';
 import { tokenAmountToUsd, useTokenUsdPrices, type UsdPriceSnapshot } from '@/services/prices';
+import { ownResult } from '@/util/useQuery';
 import { formatRawUnits } from '@/utils/format';
 import { useTokenMetas, type TokenMeta } from '@/views/Address/TokenTransfers';
 
@@ -145,8 +146,7 @@ export function KnownTokens({ chainId, address }: KnownTokensProps): ReactNode {
 
   // Cross-args guard (approvals pattern): the query store keeps the last
   // settle across an args switch, so another key's payload is absent.
-  const data =
-    query.data?.chainId === chainId && query.data.address === owner ? query.data : undefined;
+  const data = ownResult(query.data, { chainId, address: owner });
 
   const rows = useMemo(
     () => (data === undefined ? [] : filterNonZeroKnownTokenBalances(data.balances)),

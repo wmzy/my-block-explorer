@@ -16,6 +16,15 @@ import type { Address } from 'viem';
 import { analyzeRpcError, shouldRetryRpcError } from '../utils/rpcErrorHandler';
 // Shared AbortController+timer budget wrapper for the plain HTTP fetches.
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+// Proxy slot constants + decoders share ONE home with the browser-side
+// probe (utils/proxyDetection) so both resolvers answer the same question
+// the same way; the module is import-free of browser code.
+import {
+  EIP1967_BEACON_SLOT,
+  EIP1967_IMPLEMENTATION_SLOT,
+  decodeMinimalProxy,
+  slotValueToAddress,
+} from '../utils/proxyDetection';
 
 // ABI for the implementation() view function exposed by beacon contracts
 const IMPLEMENTATION_ABI = [
@@ -42,6 +51,36 @@ const MASTER_COPY_ABI = [
 // Guard for readContract() results: must be a non-zero 0x-prefixed 20-byte address
 const isValidResultAddress = (value: unknown): value is `0x${string}` =>
   typeof value === 'string' && HEX_ADDRESS_RE.test(value) && !/^0x0{40}$/i.test(value);
+
+/**
+ * Build the persisted source bundle from an upstream `sources` map, the
+ * ONE convention for both Sourcify and Blockscan payloads: a single .sol
+ * file serves its content bare (Blockscan previously wrapped even a lone
+ * file in a `// File:` header — the same payload shape rendered
+ * differently depending on which upstream answered); multiple files join
+ * with `// File:` headers; `sourceFiles` is only populated for multi-file
+ * payloads.
+ */
+function buildSourceBundle(
+  sources: Record<string, { content?: string }>,
+): { sourceCode: string; sourceFiles?: ContractFile[] } {
+  const solFiles = Object.entries(sources).filter(([name]) => name.endsWith('.sol'));
+  if (solFiles.length === 0) {
+    return { sourceCode: '' };
+  }
+  if (solFiles.length === 1) {
+    return { sourceCode: solFiles[0][1].content ?? '' };
+  }
+  return {
+    sourceCode: solFiles
+      .map(([name, src]) => `// File: ${name}\n${src.content ?? ''}`)
+      .join('\n\n'),
+    sourceFiles: solFiles.map(([name, src]) => ({
+      filename: name,
+      content: src.content ?? '',
+    })),
+  };
+}
 
 // Cache TTL tiers (in hours) for contract source records.
 // Verified non-proxy source code is immutable on-chain, so it caches long.
@@ -1090,21 +1129,7 @@ export class ContractSourceService {
       if (data.sources && typeof data.sources === 'object') {
         type SourceFile = { content?: string };
         type Sources = Record<string, SourceFile>;
-        const sources = data.sources as Sources;
-        const sourceEntries = Object.entries(sources);
-        const solFiles = sourceEntries.filter(([name]) => name.endsWith('.sol'));
-
-        if (solFiles.length === 1) {
-          sourceCode = solFiles[0][1].content ?? '';
-        } else if (solFiles.length > 1) {
-          sourceCode = solFiles
-            .map(([name, src]) => `// File: ${name}\n${src.content ?? ''}`)
-            .join('\n\n');
-          sourceFiles = solFiles.map(([name, src]) => ({
-            filename: name,
-            content: src.content ?? '',
-          }));
-        }
+        ({ sourceCode, sourceFiles } = buildSourceBundle(data.sources as Sources));
       }
 
       const result: ContractSource = {
@@ -1178,7 +1203,9 @@ export class ContractSourceService {
   ): Promise<ContractSource | null> {
     try {
       const url = `https://vscode.blockscan.com/srcapi/${chainId}/${address}`;
-      const response = await fetch(url);
+      // Same 8s budget as the sibling explorer-API fetch below: a stalled
+      // Blockscan response must not hold the whole source lookup hostage.
+      const response = await fetchWithTimeout(url, {}, 8000);
 
       if (!response.ok) {
         logger.info({ address, chainId, status: response.status }, 'Blockscan API error');
@@ -1211,20 +1238,7 @@ export class ContractSourceService {
       let sourceCode = '';
       let sourceFiles: ContractFile[] | undefined;
       if (sourceData.sources && typeof sourceData.sources === 'object') {
-        const solFiles = Object.entries(sourceData.sources).filter(([name]) =>
-          name.endsWith('.sol'),
-        );
-        if (solFiles.length > 0) {
-          sourceCode = solFiles
-            .map(([name, src]) => `// File: ${name}\n${src.content ?? ''}`)
-            .join('\n\n');
-        }
-        if (solFiles.length > 1) {
-          sourceFiles = solFiles.map(([name, src]) => ({
-            filename: name,
-            content: src.content ?? '',
-          }));
-        }
+        ({ sourceCode, sourceFiles } = buildSourceBundle(sourceData.sources));
       }
 
       const name = data.contractName ?? 'Unknown';
@@ -1510,36 +1524,32 @@ export class ContractSourceService {
         return { isProxy: false };
       }
 
-      // Check well-known proxy storage slots
-      // EIP-1967: 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
-      const implementationSlot =
-        '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
-
+      // EIP-1967 implementation slot — canonical constant + slot decoding
+      // from utils/proxyDetection (the browser probe's home), so both
+      // resolvers answer identically; slotValueToAddress also rejects
+      // malformed and all-zero slots the raw slice(-40) twin never checked.
       try {
         const implementationData = await client.getStorageAt({
           address,
-          slot: implementationSlot,
+          slot: EIP1967_IMPLEMENTATION_SLOT,
         });
 
-        if (
-          implementationData &&
-          implementationData !==
-          '0x0000000000000000000000000000000000000000000000000000000000000000'
-        ) {
-          // Extract the address (last 20 bytes)
-          const implementationAddress = `0x${implementationData.slice(-40)}`;
+        const implementationAddress = implementationData
+          ? slotValueToAddress(implementationData)
+          : null;
 
+        if (implementationAddress) {
           // Validate the implementation address is a real contract
           const isValidImplementation = await this.isContractAddress(
             chainId,
-            implementationAddress as Address,
+            implementationAddress,
           );
 
           if (isValidImplementation) {
             return {
               isProxy: true,
               proxyType: 'transparent',
-              implementationAddress: implementationAddress as Address,
+              implementationAddress,
             };
           }
         }
@@ -1547,30 +1557,25 @@ export class ContractSourceService {
         logger.warn({ err: error }, 'Failed to check EIP-1967 implementation slot');
       }
 
-      // Check UUPS proxy (EIP-1822)
-      // The implementation contract may live in the same slot
+      // EIP-1822 (UUPS) is NOT probed here: that classification belongs to
+      // the browser-side resolver (utils/proxyDetection consumers) — a
+      // backend twin would just re-diverge.
 
-      // Check beacon proxy
-      // EIP-1967 Beacon: 0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50
-      const beaconSlot = '0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50';
-
+      // EIP-1967 beacon slot (canonical constant; same shared-home note).
       try {
         const beaconData = await client.getStorageAt({
           address,
-          slot: beaconSlot,
+          slot: EIP1967_BEACON_SLOT,
         });
 
-        if (
-          beaconData &&
-          beaconData !== '0x0000000000000000000000000000000000000000000000000000000000000000'
-        ) {
-          const beaconAddress = `0x${beaconData.slice(-40)}`;
+        const beaconAddress = beaconData ? slotValueToAddress(beaconData) : null;
 
+        if (beaconAddress) {
           // Resolve the implementation from the beacon contract itself via
           // its implementation() view function
           try {
             const beaconImpl = await client.readContract({
-              address: beaconAddress as Address,
+              address: beaconAddress,
               abi: IMPLEMENTATION_ABI,
               functionName: 'implementation',
             });
@@ -1594,37 +1599,37 @@ export class ContractSourceService {
           }
 
           // Fallback: no readable implementation() from the beacon, so surface
-          // the beacon contract address itself as the pointer
+          // the beacon contract address itself as the pointer (already
+          // EIP-55 checksummed by slotValueToAddress)
           return {
             isProxy: true,
             proxyType: 'beacon',
-            implementationAddress: checksumAddress(beaconAddress),
+            implementationAddress: beaconAddress,
           };
         }
       } catch (error) {
         logger.warn({ err: error }, 'Failed to check beacon slot');
       }
 
-      // ZeppelinOS proxy: 0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3
-      const zeppelinSlot = '0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3';
+      // ZeppelinOS legacy slot — a backend-only detection tier (the
+      // canonical proxyDetection module intentionally does not carry it);
+      // the slot-value decoding is still the shared canonical.
+      const ZEPPELIN_OS_SLOT = '0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3';
 
       try {
         const zeppelinData = await client.getStorageAt({
           address,
-          slot: zeppelinSlot,
+          slot: ZEPPELIN_OS_SLOT,
         });
 
-        if (
-          zeppelinData &&
-          zeppelinData !== '0x0000000000000000000000000000000000000000000000000000000000000000'
-        ) {
-          const implAddress = `0x${zeppelinData.slice(-40)}`;
-          const isValid = await this.isContractAddress(chainId, implAddress as Address);
+        const implAddress = zeppelinData ? slotValueToAddress(zeppelinData) : null;
+        if (implAddress) {
+          const isValid = await this.isContractAddress(chainId, implAddress);
           if (isValid) {
             return {
               isProxy: true,
               proxyType: 'zeppelinos',
-              implementationAddress: implAddress as Address,
+              implementationAddress: implAddress,
             };
           }
         }
@@ -1632,19 +1637,19 @@ export class ContractSourceService {
         logger.warn({ err: error }, 'Failed to check ZeppelinOS slot');
       }
 
-      // EIP-1167 minimal proxy: bytecode starts with 363d3d373d3d3d363d73 + 20-byte address + 5af43d82803e903d91602b57fd5bf3
+      // EIP-1167 minimal proxy — the canonical EXACT runtime match (the old
+      // startsWith/endsWith twin also matched clone-with-args variants the
+      // canonical deliberately rejects: an honest miss beats a false
+      // positive, and the browser side already answers this way).
       try {
         const code = await client.getCode({ address });
         if (code) {
-          const normalized = code.toLowerCase();
-          const eip1167Prefix = '0x363d3d373d3d3d363d73';
-          const eip1167Suffix = '5af43d82803e903d91602b57fd5bf3';
-          if (normalized.startsWith(eip1167Prefix) && normalized.endsWith(eip1167Suffix)) {
-            const implAddress = `0x${normalized.slice(22, 62)}`;
+          const implAddress = decodeMinimalProxy(code);
+          if (implAddress) {
             return {
               isProxy: true,
               proxyType: 'eip1167',
-              implementationAddress: implAddress as Address,
+              implementationAddress: implAddress,
             };
           }
         }

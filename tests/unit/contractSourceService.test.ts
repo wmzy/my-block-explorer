@@ -101,7 +101,9 @@ describe('ContractSourceService - Proxy Detection', () => {
       expect(result).toEqual({
         isProxy: true,
         proxyType: 'transparent',
-        implementationAddress: implementationAddress.toLowerCase(),
+        // slotValueToAddress (utils/proxyDetection) checksums the decoded
+        // address — the same convention the beacon branch always had.
+        implementationAddress: checksumAddress(implementationAddress),
       });
 
       // Verify the correct storage slot was checked
@@ -112,7 +114,7 @@ describe('ContractSourceService - Proxy Detection', () => {
 
       // Verify implementation contract was validated
       expect(mockClient.getCode).toHaveBeenCalledWith({
-        address: implementationAddress,
+        address: checksumAddress(implementationAddress),
       });
     });
 
@@ -164,7 +166,7 @@ describe('ContractSourceService - Proxy Detection', () => {
       // implementation() must be called on the beacon contract itself
       expect(mockClient.readContract).toHaveBeenCalledWith(
         expect.objectContaining({
-          address: beaconAddress,
+          address: checksumAddress(beaconAddress),
           functionName: 'implementation',
         }),
       );
@@ -335,7 +337,7 @@ describe('ContractSourceService - Proxy Detection', () => {
 
       expect(result.isProxy).toBe(true);
       expect(result.proxyType).toBe('transparent');
-      expect(result.implementationAddress).toBe(implementationAddress.toLowerCase());
+      expect(result.implementationAddress).toBe(checksumAddress(implementationAddress));
     });
   });
 
@@ -1266,5 +1268,74 @@ describe('ContractSourceService - proxy resolution recursion guard', () => {
     // ~30 fetches is the bounded re-resolution cost of a 7-deep chain
     // with a cold cache.
     expect(fetchUrls.length).toBeLessThan(50);
+  });
+});
+
+// The ONE source-bundle convention (buildSourceBundle): a single .sol file
+// serves its content bare on BOTH upstreams — Blockscan previously wrapped
+// even a lone file in a `// File:` header, so the same payload shape
+// rendered differently depending on which upstream answered.
+describe('fetchFromBlockscan source bundle convention', () => {
+  const chainId = 1;
+  const address = '0x1234567890123456789012345678901234567890' as `0x${string}`;
+  let service: ContractSourceService;
+
+  const blockscanFetch = (sources: Record<string, { content: string }>) => {
+    const stub = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        status: '1',
+        contractName: 'Remote',
+        result: JSON.stringify({
+          language: 'Solidity',
+          sources,
+          compilerVersion: 'v0.8.20+commit.a1b79de6',
+        }),
+      }),
+    }));
+    vi.stubGlobal('fetch', stub);
+    return stub;
+  };
+
+  beforeEach(() => {
+    service = new ContractSourceService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('serves a single .sol file bare — no `// File:` header (Sourcify parity)', async () => {
+    blockscanFetch({ 'Remote.sol': { content: 'contract Remote {}' } });
+
+    const result = await (service as any).fetchFromBlockscan(chainId, address);
+
+    expect(result).not.toBeNull();
+    expect(result.sourceCode).toBe('contract Remote {}');
+    expect(result.sourceFiles).toBeUndefined();
+  });
+
+  it('joins multi-file payloads with `// File:` headers and populates sourceFiles', async () => {
+    blockscanFetch({
+      'A.sol': { content: 'contract A {}' },
+      'B.sol': { content: 'contract B {}' },
+    });
+
+    const result = await (service as any).fetchFromBlockscan(chainId, address);
+
+    expect(result.sourceCode).toBe('// File: A.sol\ncontract A {}\n\n// File: B.sol\ncontract B {}');
+    expect(result.sourceFiles).toEqual([
+      { filename: 'A.sol', content: 'contract A {}' },
+      { filename: 'B.sol', content: 'contract B {}' },
+    ]);
+  });
+
+  it('keeps an empty source set an honest empty bundle', async () => {
+    blockscanFetch({ 'README.md': { content: 'not solidity' } });
+
+    const result = await (service as any).fetchFromBlockscan(chainId, address);
+
+    expect(result.sourceCode).toBe('');
+    expect(result.sourceFiles).toBeUndefined();
   });
 });

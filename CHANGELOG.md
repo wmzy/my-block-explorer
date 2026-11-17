@@ -9,6 +9,57 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-16/17 duplication review fix wave round 13 (4 read-only scouts +
+  Main-sequenced fixes)** — 18 findings adjudicated (12 fixed, 2 deferred to
+  the standing list, 4 rejected on re-verification); one scout claim was
+  overturned at adjudication (the "button chrome twins fit ui/Button"
+  finding — `variantMap` maps `secondary` to haze's OUTLINE, so RpcConfig's
+  filled-gray secondary has no canonical equivalent; migration is visual
+  churn, same class as the deferred card-recipe family). All verified: tsc
+  0 errors, eslint 0 errors (111 warnings, baseline), `vitest --changed
+  --maxWorkers=4` 187 files / 2486 tests green, `pnpm build` green, curl
+  smoke on the built server. **Backend** — `fetchFromBlockscan` was the
+  only source fetch with NO timeout (now `fetchWithTimeout(url, {}, 8000)`
+  like its Sourcify/Routescan siblings); the Sourcify↔Blockscan
+  `sources`→`sourceCode`/`sourceFiles` building blocks were duplicated with
+  a behavioral divergence (single file: Sourcify served bare content,
+  Blockscan wrapped it in a `// File:` header) — one `buildSourceBundle`
+  helper pins the single-file-bare convention for BOTH upstreams;
+  `_detectProxyImpl` re-implemented `utils/proxyDetection` wholesale
+  (EIP-1967 impl/beacon slot literals, `slice(-40)` decoding, an 1167
+  prefix/suffix match, plus a dead "Check UUPS" comment with no code) — it
+  now takes `EIP1967_*_SLOT` + `slotValueToAddress` + `decodeMinimalProxy`
+  from the canonical (malformed/zero slots the raw slice never checked are
+  now rejected; the 1167 branch uses the canonical EXACT runtime match, so
+  clone-with-args variants are an honest miss on both sides; detected
+  addresses are EIP-55 checksummed like the beacon branch always was);
+  routes/watch.ts's hand-rolled webhook URL validator → `parseHttpUrl`
+  (512-char cap stays route-local); routes/storage.ts slot params accept
+  strict shapes only (hex regex `+` not `*` — bare `0x` used to reach the
+  RPC layer; decimal via `parseDecimalBigInt` — raw `BigInt()` accepted
+  `+7`/whitespace/`0X10`/`0b101`). **Frontend** — new canonical
+  `ownResult(data, args)` in util/useQuery.ts for the cross-args settle
+  guard (`data?.chainId === chainId ? data : undefined` hand-rolled in 8
+  view sites; the contracts directory's normalized 3-key comparison stays
+  bespoke, documented); views/Address/index.tsx's hand-rolled multicall
+  bigint narrower → `readMulticallBigint` (the fifth copy that escaped the
+  2026-11-10 wave); EventTable's local `formatValue` renamed `formatEthCell`
+  (same-name-different-semantics trap vs utils/format's 4-decimal
+  canonical); IndexingRangeManager adopts the shared `LoadingState`
+  primitive (StoragePanel round-8 precedent) and drops its identity
+  `formatBlock` wrapper; ConnectionStatus's health probe routes through
+  `fetchWithTimeout` (was the only `AbortSignal.timeout` user);
+  bannerStyles drops dead light-only hex fallbacks (the round-8 dark-mode
+  hazard class — the tokens exist and every other consumer omits
+  fallbacks). **Deferred**: searchHistory↔sqlConsole tolerant-read history
+  modules (2 members, different row shapes); checkpointed-range interval
+  derivation shared between EventStatistics/IndexingRangeManager (~10-line
+  payoff). **Rejected besides the button claim**: host-for-log twin pair
+  (cross-referenced 6-line leaves), truncatedAddress `…`-vs-`...` glyph
+  unification (round-8 adjudicated deliberate), CompileVerifyPanel
+  hex-truncation (byte context differs), BlockService `formatBlock`'s
+  `|| 0` (number is the PK conflict target — always present; theoretical).
+
 - **2026-11-16 duplication review fix wave round 12 (4 read-only scouts +
   Main-sequenced fixes)** — 11 findings adjudicated (8 fixed, 3 no-payoff
   skipped); the surface is near-exhausted: every round-6–11 canonical is

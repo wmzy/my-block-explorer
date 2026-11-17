@@ -19,7 +19,7 @@ import { createLogger } from '../server/logger';
 import { getValidatedChainId, parseChainAndAddressRequest } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
-import { parsePaginationParams } from '../utils/validation';
+import { parsePaginationParams, parseHttpUrl } from '../utils/validation';
 import {
   watchService,
   WATCH_EVENTS_DEFAULT_LIMIT,
@@ -39,17 +39,10 @@ const app = new Hono();
 // lives in utils/webhooks.ts).
 const WEBHOOK_URL_MAX_LENGTH = 512;
 
-// http(s) only — an ftp:/javascript: scheme would never be a webhook
-// endpoint, and browsers refuse to POST cross-origin anyway.
-const isValidHttpWebhookUrl = (candidate: string): boolean => {
-  if (candidate.length > WEBHOOK_URL_MAX_LENGTH) return false;
-  try {
-    const parsed = new URL(candidate);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-};
+// http(s) only, via the ONE URL validator (utils/validation parseHttpUrl —
+// the same predicate the custom-chain and rpc-config routes enforce).
+const isValidHttpWebhookUrl = (candidate: string): boolean =>
+  candidate.length <= WEBHOOK_URL_MAX_LENGTH && parseHttpUrl(candidate).ok;
 
 // 5 writes per minute per client (burst 5): the add/remove gestures of
 // one operator, while a script cycling addresses cannot.

@@ -4,6 +4,7 @@ import { StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { panelEnterBase } from '@/components/ui/motion';
 import { getApiBase } from '@/util/apiBase';
+import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
 import { useClickOutside } from '@/util/useClickOutside';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 
@@ -146,9 +147,10 @@ export function ConnectionStatus() {
         const base = getApiBase();
         if (!base) return;
 
-        const response = await fetch(`${base}/api/health`, {
-          signal: AbortSignal.timeout(5000),
-        });
+        // fetchWithTimeout, not AbortSignal.timeout: the repo-wide timer
+        // mechanism (see utils/fetchWithTimeout's header for the fake-timer
+        // rationale) — the same wrapper useAutoDiscovery probes with.
+        const response = await fetchWithTimeout(`${base}/api/health`, {}, 5000);
         if (!response.ok) throw new Error('unhealthy');
       } catch {
         reconnectingRef.current = true;

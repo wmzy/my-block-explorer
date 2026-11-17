@@ -2453,3 +2453,44 @@ pnpm typecheck           # tsc --noEmit
   DEFAULT_PORTS/opsAdminGate-style single-consumer alias shims that
   documented tests import. Round-11's question answered: scouts still pay,
   fix agents don't at this size.
+
+- **2026-11-16/17 duplication review fix wave round 13 (4 read-only scouts +
+  Main-sequenced fixes)** — 18 findings adjudicated (12 fixed, 2 deferred, 4
+  rejected). All verified: tsc 0 errors, eslint 0 errors (111 warnings =
+  baseline), `vitest --changed --maxWorkers=4` 187 files / 2486 tests green,
+  `pnpm build` green, curl smoke on the built server (throwaway DB). **New
+  canonical** — `ownResult(data, args)` in `util/useQuery.ts`: the cross-args
+  settle guard (`data?.chainId === chainId ? data : undefined`) was
+  hand-rolled in 8 view sites (BalanceHistory, KnownTokens ×2, approvals,
+  Charts, Home, Pending, Address index); every new view had to re-derive the
+  one defense against cross-chain data flash. The contracts directory's
+  normalized 3-key comparison (`q ?? ''` on both sides) stays bespoke —
+  exact `===` per key is the helper's contract. **Backend** —
+  `buildSourceBundle` in ContractSourceService pins the ONE upstream source
+  convention (single .sol file = bare content on BOTH Sourcify and Blockscan;
+  Blockscan's lone-file `// File:` framing is gone); `fetchFromBlockscan`
+  gained the 8s `fetchWithTimeout` its siblings always had;
+  `_detectProxyImpl` consumes `utils/proxyDetection` (EIP1967 slot constants,
+  `slotValueToAddress` — malformed/zero slots now rejected and addresses
+  EIP-55 checksummed, matching the beacon branch; `decodeMinimalProxy`'s
+  EXACT runtime match — clone-with-args variants are an honest miss on both
+  sides; the dead "Check UUPS" comment is replaced by a pointer to the
+  browser-side 1822 owner; ZeppelinOS slot stays a documented backend-only
+  tier). watch.ts webhook URLs validate via `parseHttpUrl` (512-cap
+  route-local); storage.ts slot params are strict (`0x` empty-hex and
+  BigInt-lenient `+7`/` 7`/`0X10`/`0b101` all 400 now — regression-pinned
+  live). **Frontend polish** — EventTable's local `formatValue` renamed
+  `formatEthCell` (6-decimal cell contract vs the 4-decimal canonical — the
+  same-name-different-semantics trap); IndexingRangeManager adopts
+  `LoadingState` + drops its identity `formatBlock` wrapper; Address view's
+  multicall bigint narrower → `readMulticallBigint`; ConnectionStatus probe
+  → `fetchWithTimeout` (last `AbortSignal.timeout` user); bannerStyles hex
+  fallbacks dropped. **Rules pinned**: (1) scout "fits the canonical" claims
+  need API-surface verification — `ui/Button`'s `variantMap` maps
+  `secondary`→haze OUTLINE, so RpcConfig/RpcFunctionError/IndexingRangeManager's
+  filled button recipes have NO migration path without a visual delta; they
+  join the card-recipe deferred family. (2) Slot-value decoding belongs to
+  `slotValueToAddress` everywhere — raw `slice(-40)` twins skip hex-shape,
+  zero-slot and checksum semantics. Deferred: searchHistory↔sqlConsole
+  history modules (2 members, different row shapes); checkpointed-range
+  interval derivation (EventStatistics vs IRM, ~10-line payoff).

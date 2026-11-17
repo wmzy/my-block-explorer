@@ -16,6 +16,7 @@ import {
 } from '@/utils/format';
 import { gasUsedPercentLabel } from '@/utils/gasShare';
 import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
+import { ownResult } from '@/util/useQuery';
 import { PageContainer } from '@/components/ui/PageLayout';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -557,7 +558,7 @@ function GasPanel({ feed, chainId }: { feed: GasFeedState; chainId: number }) {
   // the new chain's fetch runs, so another chain's result is treated as
   // absent — the panel pulses instead of flashing chain A's fees under
   // chain B's header.
-  const own = feed.data?.chainId === chainId ? feed.data : undefined;
+  const own = ownResult(feed.data, { chainId });
   const snapshot = own?.status === 'ok' ? own.snapshot : undefined;
 
   if (snapshot) {

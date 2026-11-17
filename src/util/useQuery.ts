@@ -256,3 +256,30 @@ export function createQueryHook<T, K extends unknown[], C extends QueryHookConfi
     return result as QueryResult<SceneData<C, T>>;
   };
 }
+
+/**
+ * Cross-args settle guard: the query store keeps the LAST settle across an
+ * args switch, so a cached payload from other arguments (another chain,
+ * another address) must be treated as absent — otherwise the view flashes
+ * chain A's data under chain B's header while the new fetch runs. The
+ * payload's own echo of the arguments is the only trustworthy identity:
+ * every key in `args` must `===`-match the payload's field. Payloads that
+ * answer "which arguments produced me" with normalized fields (e.g. a
+ * lowercase address) must pass the SAME normalization in `args`.
+ *
+ * Returns the payload when it belongs to the current arguments, else
+ * undefined. Views with more exotic matching (normalized optional fields,
+ * multi-key echoes like the contracts directory's `q ?? ''` comparison)
+ * keep their bespoke guards — exact `===` on every key is the contract
+ * here.
+ */
+export function ownResult<T extends { chainId: number }>(
+  data: T | undefined,
+  args: { chainId: number } & { [K in keyof T]?: T[K] },
+): T | undefined {
+  if (data === undefined) return undefined;
+  for (const key of Object.keys(args) as (keyof T)[]) {
+    if (data[key] !== args[key]) return undefined;
+  }
+  return data;
+}

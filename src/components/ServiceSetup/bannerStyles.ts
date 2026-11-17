@@ -16,8 +16,8 @@ export const bannerStyle = css`
   flex-wrap: wrap;
   gap: var(--haze-space-3) var(--haze-space-4);
   padding: var(--haze-space-3) var(--haze-space-10);
-  background: var(--haze-color-warning-subtle, #fef3c7);
-  border-bottom: 1px solid var(--haze-color-warning, #d97706);
+  background: var(--haze-color-warning-subtle);
+  border-bottom: 1px solid var(--haze-color-warning);
   color: var(--haze-color-text);
   box-shadow: var(--haze-shadow-md);
 `;

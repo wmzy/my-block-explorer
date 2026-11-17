@@ -47,6 +47,7 @@ import {
 import { isBackendUnreachable } from '@/util/http';
 import { getApiBase } from '@/util/apiBase';
 import { ApiError } from '@/util/apiError';
+import { ownResult } from '@/util/useQuery';
 import {
   labelMatchesTarget,
   saveAddressLabel,
@@ -99,7 +100,7 @@ import {
   formatRelativeTime,
 } from '@/utils/format';
 import { codeVerdict } from '@/utils/address';
-import { MULTICALL3_ADDRESS } from '@/utils/multicall';
+import { MULTICALL3_ADDRESS, readMulticallBigint } from '@/utils/multicall';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
@@ -666,9 +667,9 @@ function HoldingsList({
         if (cancelled) return;
         const balances: Record<string, bigint> = {};
         verifyTokens.forEach((token, index) => {
-          const outcome = outcomes[index];
-          if (outcome?.status === 'success' && typeof outcome.result === 'bigint') {
-            balances[token.toLowerCase()] = outcome.result;
+          const balance = readMulticallBigint(outcomes[index]);
+          if (balance !== null) {
+            balances[token.toLowerCase()] = balance;
           }
         });
         setVerifiedBalances(balances);
@@ -1453,8 +1454,7 @@ export default function Address() {
   const balanceHistoryQuery = useBalanceHistoryQuery([currentChainId, address, txSearchWindow]);
   // Cross-chain guard (the chart's own pattern): the query layer keeps
   // the last settle across an args switch — only same-chain data serves.
-  const balanceHistoryPage =
-    balanceHistoryQuery.data?.chainId === currentChainId ? balanceHistoryQuery.data : undefined;
+  const balanceHistoryPage = ownResult(balanceHistoryQuery.data, { chainId: currentChainId });
   const summaryStatsRows = useMemo(
     () => (balanceHistoryPage === undefined ? [] : withBlockTimes(balanceHistoryPage)),
     [balanceHistoryPage],
@@ -1679,11 +1679,10 @@ export default function Address() {
   const knownTokensCurated = knownTokensForChain(currentChainId);
   const knownTokensOwner = address.trim().toLowerCase();
   const knownTokensQuery = useKnownTokenBalances(currentChainId, knownTokensOwner);
-  const knownTokensData =
-    knownTokensQuery.data?.chainId === currentChainId &&
-    knownTokensQuery.data.address === knownTokensOwner
-      ? knownTokensQuery.data
-      : undefined;
+  const knownTokensData = ownResult(knownTokensQuery.data, {
+    chainId: currentChainId,
+    address: knownTokensOwner,
+  });
   const knownTokensPresent = knownTokensCurated.length > 0 && knownTokensData !== undefined;
 
   // NFT-holdings presence mirrors NftHoldings' own gate over the SAME

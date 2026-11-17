@@ -21,7 +21,7 @@ import { Collapsible } from '@/components/ui/Collapsible';
 import { getChainInfo } from '@/config/chains';
 import { ApiError } from '@/util/apiError';
 import { get, longRunningApi, withSignal } from '@/util/http';
-import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
+import { bindQueryFn, createQueryCache, createQueryHook, ownResult } from '@/util/useQuery';
 import { formatNumber } from '@/utils/format';
 import {
   buildBalanceChartGeometry,
@@ -318,7 +318,7 @@ export function BalanceHistory({
   // Cross-chain guard (gas-panel pattern): the query layer's store keeps
   // the last settle across an args switch, so another chain's payload is
   // treated as absent.
-  const data = query.data?.chainId === chainId ? query.data : undefined;
+  const data = ownResult(query.data, { chainId });
 
   const chainInfo = getChainInfo(chainId);
   const decimals = chainInfo?.nativeCurrency.decimals ?? 18;
