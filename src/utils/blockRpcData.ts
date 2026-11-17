@@ -141,10 +141,8 @@ const formatBlock = (block: Block, includeTimestamp = true): RpcBlock => ({
 // number — Number('eip1559') is NaN and rendered as "Type NaN". The ONE
 // normalizer lives in the import-free leaf utils/transactionType.ts
 // (TransactionService imports the leaf directly — blockRpcData must stay
-// OUT of the backend import graph); imported for THIS module's own calls
-// and re-exported for the barrel.
+// OUT of the backend import graph); imported for THIS module's own calls.
 import { normalizeTransactionType } from './transactionType';
-export { normalizeTransactionType };
 
 // Authorization quantities arrive as bigint/number (viem-formatted) or as
 // raw 0x-quantity strings, depending on which surface they came from.

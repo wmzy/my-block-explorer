@@ -9,6 +9,37 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-17 duplication review fix wave round 14 (4 read-only scouts +
+  Main-sequenced fixes)** — 9 findings adjudicated (6 fixed, 1 rejected on
+  round-8 precedent, 2 keep-deliberate). **Dedup** — the byte-equal
+  `METHOD_UNSUPPORTED_PATTERN` regex + failure-classify twins in
+  chartStats/gasHistory collapsed into canonical
+  `isMethodUnsupportedText`/`isMethodUnsupportedMessage` predicates in
+  `utils/errorHandler.ts` (errorMessage/flattenErrorMessage's existing
+  home; both callers already imported from it). **Dead code** —
+  blockRpcData's `normalizeTransactionType` re-export (stale "for the
+  barrel" comment; the utils barrel was deleted rounds ago), viemScript's
+  zero-importer `CastableFunction` type re-export, and three dead
+  `export default` lines (SegmentedProgressBar, TxStatusBadge, UnitToggle
+  — default exports escape named-symbol scans). **Naming** — the legacy
+  thin `AddressInfo` in `types/blockchain.ts` renamed
+  `SearchAddressResult`: `services/AddressService.ts` owns a different,
+  richer `AddressInfo`, and the shared name was a drift trap for anyone
+  "unifying" them (only the Search view consumed the thin shape).
+  **Routes** — the opt-in debug SQL endpoint's envelope moved to the
+  project convention (snake_case `invalid_query`/`query_failed` codes via
+  `createApiError`, 500 message through `errorMessage` — replacing a
+  one-element `causeChain` vestige); test pins updated in the same
+  change. **Docs** — AGENTS.md truth fixes: the debug API is behind the
+  opt-in admin tier scoped `/debug/db/*` (was documented "carries no gate
+  at all"), overview now says Node 26 (engines require `>=26`), and the
+  `build:client` `_redirects` claim (no such generation exists) is gone.
+  Rejected: unifying the `truncatedAddress` `…` glyph with `cellText`'s
+  `...` (round-8 glyph-breaking-merge precedent — visible change, needs
+  an explicit mandate). All verified: tsc 0 errors, eslint 0 errors (111
+  warnings, baseline), `vitest --changed --maxWorkers=4` green,
+  `pnpm build` green.
+
 - **2026-11-16/17 duplication review fix wave round 13 (4 read-only scouts +
   Main-sequenced fixes)** — 18 findings adjudicated (12 fixed, 2 deferred to
   the standing list, 4 rejected on re-verification); one scout claim was

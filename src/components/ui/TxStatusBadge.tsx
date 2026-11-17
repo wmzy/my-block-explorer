@@ -40,5 +40,3 @@ export function TxStatusBadge({
     </Badge>
   );
 }
-
-export default TxStatusBadge;

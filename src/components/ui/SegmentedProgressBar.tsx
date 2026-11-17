@@ -212,5 +212,3 @@ export function SegmentedProgressBar({ segments, className }: Props) {
     </div>
   );
 }
-
-export default SegmentedProgressBar;

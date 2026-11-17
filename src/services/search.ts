@@ -11,7 +11,7 @@ export type SupportedChainRef = { chainId: number; name: string; symbol: string 
 
 // Shape shared by both endpoints (/api/search and /api/chains/:id/search).
 // `data` stays loose here: the concrete payload (Block/Transaction/
-// AddressInfo) is discriminated by `type` and narrowed by consumers.
+// SearchAddressResult) is discriminated by `type` and narrowed by consumers.
 export type SearchResult = {
   found: boolean;
   type: string;

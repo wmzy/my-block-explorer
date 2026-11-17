@@ -67,5 +67,3 @@ export function UnitToggle({ symbol, className }: { symbol: string; className?: 
     </span>
   );
 }
-
-export default UnitToggle;

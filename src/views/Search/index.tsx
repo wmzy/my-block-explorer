@@ -28,7 +28,7 @@ import {
 import { formatAddress } from '@/utils/format';
 import { readRememberedChainId } from '@/views/Home/Landing';
 import { degradedSearchMessage } from './degradedReasons';
-import type { Block, Transaction, AddressInfo } from '@/types/blockchain';
+import type { Block, SearchAddressResult, Transaction } from '@/types/blockchain';
 
 const searchSchema = z.object({
   q: z.string().optional().catch(undefined),
@@ -575,13 +575,13 @@ export default function Search() {
       // Navigate on the chain the endpoint actually searched when it says
       // so (searchedChainId); the payload's own chainId is only a fallback.
       if (navigatingToResult && searchResult.data) {
-        const data = searchResult.data as AddressInfo | Transaction | Block;
+        const data = searchResult.data as SearchAddressResult | Transaction | Block;
         const targetChain = searchedChain ?? data.chainId;
         navigateToSearchResult(
           searchResult.type,
           data,
           targetChain,
-          (data as AddressInfo).address,
+          (data as SearchAddressResult).address,
         );
       }
     } catch (err) {

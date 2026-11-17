@@ -49,6 +49,24 @@ export function flattenErrorMessage(error: unknown): string {
 }
 
 /**
+ * Provider "your node doesn't have this method" texts, matched against
+ * already-flattened text. The one home for the chart/gas classifiers'
+ * identical regex (providers word this a dozen ways and viem wraps the
+ * JSON-RPC error several layers deep, so always flatten first).
+ */
+const METHOD_UNSUPPORTED_PATTERN =
+  /(method[^\n]*not[^\n]*(found|exist|available|support))|not[^\n]*supported|does not exist|unimplemented/i;
+
+export function isMethodUnsupportedText(text: string): boolean {
+  return METHOD_UNSUPPORTED_PATTERN.test(text);
+}
+
+/** Flatten an error chain, then apply {@link isMethodUnsupportedText}. */
+export function isMethodUnsupportedMessage(error: unknown): boolean {
+  return isMethodUnsupportedText(flattenErrorMessage(error));
+}
+
+/**
  * Retry decorator
  */
 export function withRetry<T extends unknown[], R>(

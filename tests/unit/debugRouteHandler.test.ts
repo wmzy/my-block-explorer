@@ -86,7 +86,7 @@ describe('POST /debug/db/query (mounted via ENABLE_DEBUG_API=1)', () => {
       const response = await post(body);
       expect(response.status).toBe(400);
       const parsed = await response.json();
-      expect(parsed).toMatchObject({ statusCode: 400, error: 'Bad Request' });
+      expect(parsed).toMatchObject({ statusCode: 400, error: 'invalid_query' });
       expect(parsed.message).toContain('sql');
     }
   });
@@ -96,7 +96,7 @@ describe('POST /debug/db/query (mounted via ENABLE_DEBUG_API=1)', () => {
 
     expect(response.status).toBe(500);
     const parsed = await response.json();
-    expect(parsed).toMatchObject({ statusCode: 500, error: 'Query Failed' });
+    expect(parsed).toMatchObject({ statusCode: 500, error: 'query_failed' });
     expect(typeof parsed.message).toBe('string');
     expect(parsed.message.length).toBeGreaterThan(0);
   });

@@ -24,8 +24,10 @@ export type Transaction = ViemTransaction &
     network: string; // network name
   };
 
-// Address info type
-export type AddressInfo = BaseEntity & {
+// Payload the search endpoints return for an address hit. Intentionally
+// NOT named AddressInfo — services/AddressService.ts owns a different,
+// richer AddressInfo entity; the shared name was a drift trap.
+export type SearchAddressResult = BaseEntity & {
   address: Address; // viem's Address type
   balance: string;
   transactionCount: number;

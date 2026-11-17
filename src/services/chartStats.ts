@@ -23,8 +23,9 @@
 // of serving a dead RPC's verdict until midnight.
 import { createRpcClient } from '@/utils/realTimeData';
 import { formatNumber } from '@/utils/format';
-// The Error-cause chain flattener (errorHandler's one copy).
-import { flattenErrorMessage } from '@/utils/errorHandler';
+// Error-cause flattener + the shared method-unsupported classifier
+// (errorHandler's one copy).
+import { flattenErrorMessage, isMethodUnsupportedMessage, isMethodUnsupportedText } from '@/utils/errorHandler';
 // The one "one day" constant — import-free leaf.
 import { MS_PER_DAY } from '@/utils/time';
 
@@ -456,9 +457,6 @@ export function txSamplingLabel(
 
 // --- failure classification ---
 
-const METHOD_UNSUPPORTED_PATTERN =
-  /(method[^\n]*not[^\n]*(found|exist|available|support))|not[^\n]*supported|does not exist|unimplemented/i;
-
 const RPC_WINDOW_CAP_PATTERN =
   /(too large|exceed|limit|range too|maximum|too many|block count|block range)/i;
 
@@ -467,8 +465,7 @@ const RPC_WINDOW_CAP_PATTERN =
  * reason travels; raw provider text never reaches the UI.
  */
 export function classifyChartsFailure(error: unknown): 'method-not-supported' | 'rpc-error' {
-  const text = flattenErrorMessage(error);
-  return METHOD_UNSUPPORTED_PATTERN.test(text) ? 'method-not-supported' : 'rpc-error';
+  return isMethodUnsupportedMessage(error) ? 'method-not-supported' : 'rpc-error';
 }
 
 // --- fetch layer ---
@@ -539,7 +536,7 @@ async function fetchDayGas(
       });
     } catch (error) {
       const text = flattenErrorMessage(error);
-      if (METHOD_UNSUPPORTED_PATTERN.test(text)) {
+      if (isMethodUnsupportedText(text)) {
         return { point: null, reason: 'method-not-supported' };
       }
       if (RPC_WINDOW_CAP_PATTERN.test(text)) {
@@ -613,7 +610,7 @@ async function fetchSampledTxPerDay(
           if (Number.isFinite(count) && count >= 0) counts.set(tasks[index], count);
         } catch (error) {
           sawFailure = true;
-          if (METHOD_UNSUPPORTED_PATTERN.test(flattenErrorMessage(error))) methodUnsupported = true;
+          if (isMethodUnsupportedMessage(error)) methodUnsupported = true;
         }
       }
     },

@@ -28,8 +28,6 @@ import {
 import { type CastableFunction, toAbiFunction } from './castCommand';
 import { VIEM_CHAIN_EXPORTS } from '@/utils/viemChainExports';
 
-export type { CastableFunction } from './castCommand';
-
 // The chain metadata the builder serializes; the caller resolves it (the
 // form via getChainInfo) so this module stays pure over its inputs.
 export type ViemChainInfo = {

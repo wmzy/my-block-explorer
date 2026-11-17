@@ -3,6 +3,7 @@ import { createLogger } from '../server/logger';
 import { db } from '../database/init';
 import { sql } from 'drizzle-orm';
 import { createApiError } from '../utils/api-error';
+import { errorMessage } from '../utils/errorHandler';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 
 const logger = createLogger('debug-routes');
@@ -34,7 +35,7 @@ app.post('/db/query', async c => {
     const { sql: query } = body;
 
     if (!query || typeof query !== 'string') {
-      return c.json(createApiError(400, 'Bad Request', 'Missing or invalid sql parameter'), 400);
+      return c.json(createApiError(400, 'invalid_query', 'Missing or invalid sql parameter'), 400);
     }
 
     // Warn about dangerous operations
@@ -52,16 +53,8 @@ app.post('/db/query', async c => {
     });
   } catch (error) {
     logger.error({ err: error }, 'Debug DB query error');
-    const causeChain: string[] = [];
-    if (error instanceof Error) {
-      causeChain.push(error.message);
-    }
     return c.json(
-      createApiError(
-        500,
-        'Query Failed',
-        error instanceof Error ? causeChain.join('\n') : 'Unknown error',
-      ),
+      createApiError(500, 'query_failed', errorMessage(error, 'Unknown error')),
       500,
     );
   }

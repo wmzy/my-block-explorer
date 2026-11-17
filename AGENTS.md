@@ -7,7 +7,7 @@
 
 Multi-chain blockchain explorer with data separation architecture. Frontend
 (React 19 + Vite 8 + Linaria) fetches ephemeral data directly from RPC via viem;
-backend (Hono + Node 22) caches persistent data (contracts, events) in DuckDB
+backend (Hono + Node 26) caches persistent data (contracts, events) in DuckDB
 via custom PostgreSQL adapter for Drizzle ORM.
 
 ## STRUCTURE
@@ -193,7 +193,7 @@ pnpm mcp                 # MCP stdio server (tsx; EXPLORER_API_URL, default 8201
 
 # Build
 pnpm build               # Build client + server
-pnpm build:client        # Vite build + SPA _redirects
+pnpm build:client        # Vite build
 pnpm build:server        # tsup compilation
 
 # Database
@@ -249,7 +249,8 @@ pnpm typecheck           # tsc --noEmit
   closed** when `ADMIN_TOKEN` unset): the SQL console subtree
   (`/api/sql/*` — the former `/api/performance/*` family was deleted in the
   2026-09-30 cleanup wave; the RpcConfig admin-token verify probe now hits
-  `GET /api/sql/tables`). The debug API below carries no gate at all. Opt-in tier
+  `GET /api/sql/tables`). The debug API below (`/debug/db/*`) sits behind
+  the opt-in tier. Opt-in tier
   (`requireAdminTokenIfConfigured`): passes when `ADMIN_TOKEN` is unset
   (zero-config local works), enforces identically to the strict tier when it is
   set — covers the 7 mutating event-range routes
@@ -2494,3 +2495,35 @@ pnpm typecheck           # tsc --noEmit
   zero-slot and checksum semantics. Deferred: searchHistory↔sqlConsole
   history modules (2 members, different row shapes); checkpointed-range
   interval derivation (EventStatistics vs IRM, ~10-line payoff).
+- **2026-11-17 duplication review fix wave round 14 (4 read-only scouts +
+  Main-sequenced fixes)** — 9 findings adjudicated (6 fixed, 1 rejected on
+  round-8 precedent, 2 keep-deliberate); the surface keeps shrinking exactly
+  as rounds 11-13 predicted. Fixed: the byte-equal
+  `METHOD_UNSUPPORTED_PATTERN` regex + classify twins in chartStats/gasHistory
+  → canonical `isMethodUnsupportedText`/`isMethodUnsupportedMessage` in
+  `utils/errorHandler.ts` (browser-safe leaf; both callers already imported
+  `flattenErrorMessage` from there); dead `normalizeTransactionType`
+  re-export in blockRpcData.ts (stale "for the barrel" comment — the barrel
+  died rounds ago; the internal import stays); dead
+  `export type { CastableFunction }` re-export in viemScript.ts; the
+  legacy `AddressInfo` in types/blockchain.ts renamed `SearchAddressResult`
+  (services/AddressService.ts owns a DIFFERENT richer AddressInfo — the
+  shared name was a drift trap; only the Search view consumed the thin
+  one); routes/debug.ts off-convention envelope (`'Bad Request'`/
+  `'Query Failed'` space-case codes + a one-element causeChain vestige) →
+  snake_case `invalid_query`/`query_failed` + `errorMessage` (test pins
+  updated in the same change); three dead `export default` lines deleted
+  (SegmentedProgressBar/TxStatusBadge/UnitToggle — default exports escape
+  named-symbol scans, the RpcErrorAlert lesson again). AGENTS.md doc-truth
+  ×3: the debug API IS gated (opt-in tier, `/debug/db/*` — the old text
+  claimed "no gate at all"), overview said "Node 22" while engines require
+  26, and `build:client` claimed an SPA `_redirects` generation that
+  doesn't exist anywhere in the repo. Rejected: unifying the
+  `truncatedAddress` `…` glyph with `cellText`'s `...` is the round-8
+  glyph-breaking-merge class — visible change, needs an explicit mandate.
+  Keep-deliberate: inline `n === 1 ? '' : 's'` pluralization (~11 JSX
+  sites interleave markup around the noun — `pluralize`'s whole-string
+  contract doesn't fit); the two `AddressInfo` backend shapes after the
+  rename (SearchService vs Search view genuinely consume different
+  entities). All verified: tsc 0 errors, eslint 0 errors (111 warnings,
+  baseline), `vitest --changed --maxWorkers=4` green, `pnpm build` green.

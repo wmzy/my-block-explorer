@@ -23,8 +23,8 @@
 //   absent (undefined), never a guess dressed up as a number.
 import { createRpcClient } from '@/utils/realTimeData';
 import { formatNumber } from '@/utils/format';
-// The Error-cause chain flattener (errorHandler's one copy).
-import { flattenErrorMessage } from '@/utils/errorHandler';
+// The shared method-unsupported classifier (errorHandler's one copy).
+import { isMethodUnsupportedMessage } from '@/utils/errorHandler';
 
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
 // The gwei divisor's one home (util/units, beside its BigInt twin).
@@ -342,16 +342,12 @@ export function buildGasHistory(
 
 // --- failure classification ---
 
-const METHOD_UNSUPPORTED_PATTERN =
-  /(method[^\n]*not[^\n]*(found|exist|available|support))|not[^\n]*supported|does not exist|unimplemented/i;
-
 /**
  * Classify a failed fee-history fetch for the honest unavailable state.
  * Only the reason travels; raw provider text never reaches the UI.
  */
 export function classifyGasFailure(error: unknown): GasUnavailableReason {
-  const text = flattenErrorMessage(error);
-  return METHOD_UNSUPPORTED_PATTERN.test(text) ? 'method-not-supported' : 'fetch-failed';
+  return isMethodUnsupportedMessage(error) ? 'method-not-supported' : 'fetch-failed';
 }
 
 // --- fetch + hook ---
