@@ -9,6 +9,37 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-18 duplication review fix wave round 16 (4 read-only scouts +
+  Main-sequenced fixes)** — 7 findings adjudicated (6 fixed, 1 deferred);
+  the tiers are converging: Views/Shared/backend-routing scopes reported
+  "surface clean". **Type-honesty closure in BlockService** —
+  `buildBlockValues` now returns the schema's insert shape (bigint for
+  bignum columns — their `toDriver` stringifies — `0x${string}` for hex,
+  presence tests instead of truthiness), deleting the file's two
+  `values as any` + eslint-disables (the last `as any` in src/services);
+  `formatBlock` gained `toBigintOrUndefined` so the synthesized RPC path
+  and the fromDriver DB path share one mapper, closing the latent
+  bigint-0n truthiness drop on gasLimit/gasUsed/baseFeePerGas and making
+  difficulty/totalDifficulty actually match their declared `string`
+  type. **Falsy-zero class** — `getTransactionByHash`
+  (utils/blockRpcData) skipped block-timestamp enrichment for genesis
+  transactions (`blockNumber 0n` is falsy); now a `!= null` presence
+  test. **Dead weight** — `duckdbIndex` re-export (zero importers),
+  OpsService's `parseMainDbPath` move-shim (its one consumer, the ops
+  test, now imports the `dbPath` leaf directly), and the whole
+  `src/database/README.md` (428 lines documenting a design that no
+  longer exists: phantom `duckdbBigint`/`duckdbTimestamp` constructors,
+  "bignum = VARCHAR(32)", "reads come back as strings"; db-types.ts +
+  database/AGENTS.md are the living truth — the AGENTS KEY TYPES bignum
+  line was corrected to BIGNUM/bigint in the same change). **Doc-truth**
+  — the adapter constructor's mkdir rationale no longer cites the
+  per-chain event stores removed in the 2026-11-09 wave. Deferred:
+  BalanceHistory's chart-path construction partially re-rolls the
+  geometry builder (~10 lines, gap-splitting genuinely diverged — the
+  Address-view micro-extraction family). All verified: tsc 0 errors,
+  eslint 0 errors on touched files, `vitest --changed --maxWorkers=4`
+  141 files / 1588 tests green, `pnpm build` green.
+
 - **2026-11-17 duplication review fix wave round 14 (4 read-only scouts +
   Main-sequenced fixes)** — 9 findings adjudicated (6 fixed, 1 rejected on
   round-8 precedent, 2 keep-deliberate). **Dedup** — the byte-equal

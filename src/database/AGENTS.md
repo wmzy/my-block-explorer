@@ -27,7 +27,7 @@ database/
 
 ```typescript
 // Custom types for DuckDB compatibility
-bignum; // BIGINT → VARCHAR(32), prevents precision loss
+bignum; // BIGNUM (bigint in JS, decimal string on the wire; uint256 is an alias)
 timestamp; // TIMESTAMP_S (seconds, no timezone)
 address; // char(42) for EVM addresses
 txHash; // char(66) for transaction hashes

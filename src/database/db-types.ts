@@ -110,6 +110,3 @@ export { pgTable as duckdbTable } from 'drizzle-orm/pg-core';
 
 // ✅ DuckDB-compatible constraint constructors
 export { primaryKey, unique } from 'drizzle-orm/pg-core';
-
-// ✅ DuckDB-compatible index constructor - specifying index types is unsupported
-export { index as duckdbIndex } from 'drizzle-orm/pg-core';

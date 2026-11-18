@@ -104,14 +104,14 @@ export class DuckDBPostgresAdapter {
     // Parse the connection string and extract the database path
     this.dbPath = this.parseConnectionString(connectionString);
 
-    // Create the parent directory OF THIS DATABASE, not a hardcoded
-    // `data/`. The per-chain event stores live at
-    // data/chains/{mainnet,testnet}/{type}/{name}-{id}.db, so a fixed
-    // `data/` left every intermediate level missing and the open failed
-    // with "Cannot open file ...: No such file or directory" on a fresh
-    // install. dirname() handles a relative path (the documented
-    // default 'duckdb://data/blockchain.db') by returning a relative
-    // dir, which mkdir resolves against cwd.
+    // Create the parent directory OF THIS DATABASE, never a hardcoded
+    // `data/` — DATABASE_URL may point anywhere (a throwaway
+    // `duckdb:///tmp/smoke.db`, a custom absolute path), and the DuckDB
+    // open fails with "Cannot open file ...: No such file or directory"
+    // when an intermediate level is missing on a fresh install.
+    // dirname() handles a relative path (the documented default
+    // 'duckdb://data/blockchain.db') by returning a relative dir, which
+    // mkdir resolves against cwd.
     this.dataDirReady = mkdir(dirname(this.dbPath), { recursive: true })
       .then(() => undefined)
       .catch(err => {

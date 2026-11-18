@@ -58,37 +58,39 @@ const createBlockService = (deps: BlockServiceDeps) => {
     return Number.isFinite(parsed) ? parsed : undefined;
   };
 
+  // A stored bignum. drizzle's fromDriver (real DB reads) and
+  // buildBlockValues (the synthesized RPC path) both hand us bigint, but
+  // fixture-shaped rows serve decimal strings — accept both. 0n is a VALUE
+  // (a dev chain's genesis fields, post-merge 0n difficulty), so only
+  // null/undefined/'' mean "not recorded".
+  const toBigintOrUndefined = (value: unknown): bigint | undefined => {
+    if (value === null || value === undefined || value === '') return undefined;
+    return typeof value === 'bigint' ? value : BigInt(String(value));
+  };
+
   const formatBlock = (dbBlock: Record<string, unknown>): Block => {
     const get = (camel: string, snake: string) => dbBlock[camel] ?? dbBlock[snake];
     return {
       chainId: Number(get('chainId', 'chain_id')),
-      number: BigInt((get('number', 'number') as string | number) || 0),
+      number: toBigintOrUndefined(get('number', 'number')) ?? 0n,
       hash: get('hash', 'hash') as string,
       parentHash: (get('parentHash', 'parent_hash') as string) || undefined,
       timestamp: secondsToDate(get('timestamp', 'timestamp')),
       miner: (get('miner', 'miner') as string) || undefined,
-      gasLimit: get('gasLimit', 'gas_limit')
-        ? BigInt(get('gasLimit', 'gas_limit') as string)
-        : undefined,
-      gasUsed: get('gasUsed', 'gas_used')
-        ? BigInt(get('gasUsed', 'gas_used') as string)
-        : undefined,
-      baseFeePerGas: get('baseFeePerGas', 'base_fee_per_gas')
-        ? BigInt(get('baseFeePerGas', 'base_fee_per_gas') as string)
-        : undefined,
+      gasLimit: toBigintOrUndefined(get('gasLimit', 'gas_limit')),
+      gasUsed: toBigintOrUndefined(get('gasUsed', 'gas_used')),
+      baseFeePerGas: toBigintOrUndefined(get('baseFeePerGas', 'base_fee_per_gas')),
       // `get(...) ? x : undefined` on these two would delete a REAL 0:
       // transaction_count is an integer column written as
       // `transactions.length`, so an empty block stores 0 and the mapper
       // used to report it as absent — a blank Txs cell in the blocks
       // list, "View  Transactions" on the detail page, and an
       // InternalTxnsSection whose `transactionCount === 0` branch never
-      // ran. Only null/undefined mean "not recorded". (The BIGNUM
-      // columns above get away with the truthiness form only because a
-      // bignum zero arrives as the truthy string "0".)
+      // ran. Only null/undefined mean "not recorded".
       transactionCount: toNumberOrUndefined(get('transactionCount', 'transaction_count')),
       sizeBytes: toNumberOrUndefined(get('sizeBytes', 'size_bytes')),
-      difficulty: (get('difficulty', 'difficulty') as string) || undefined,
-      totalDifficulty: (get('totalDifficulty', 'total_difficulty') as string) || undefined,
+      difficulty: toBigintOrUndefined(get('difficulty', 'difficulty'))?.toString(),
+      totalDifficulty: toBigintOrUndefined(get('totalDifficulty', 'total_difficulty'))?.toString(),
       extraData: (get('extraData', 'extra_data') as string) || undefined,
       logsBloom: (get('logsBloom', 'logs_bloom') as string) || undefined,
       stateRoot: (get('stateRoot', 'state_root') as string) || undefined,
@@ -98,8 +100,13 @@ const createBlockService = (deps: BlockServiceDeps) => {
     };
   };
 
-  // The row an RPC block would be stored as. Factored out of indexBlock so
-  // the read path can answer from the same mapping WITHOUT the cache write.
+  // The row an RPC block would be stored as, typed to the schema's insert
+  // shape — bignum columns take bigint (their toDriver stringifies for
+  // BIGNUM), hex columns `0x${string}`. Factored out of indexBlock so
+  // the read path can answer from the same mapping WITHOUT the cache
+  // write, which is why the values match a drizzle read row's shape
+  // (bigint bignums), never the wire's decimal strings. Quantities are
+  // presence-tested: 0n/0 are real values, not "unknown".
   //
   // SECONDS, matching the `timestamp` column's customType. The old code
   // passed a Date in, which toDriver (db-types.ts) only stringifies —
@@ -112,25 +119,35 @@ const createBlockService = (deps: BlockServiceDeps) => {
         ? null
         : Number(chainBlock.timestamp);
 
+    // viem hands back bigint for every EVM quantity; decimal strings and
+    // numbers are accepted so fixture-shaped inputs keep working.
+    const bignumValue = (value: unknown): bigint | null => {
+      if (value === null || value === undefined || value === '') return null;
+      return typeof value === 'bigint' ? value : BigInt(String(value));
+    };
+    const hexValue = (value: unknown): `0x${string}` | null =>
+      typeof value === 'string' && value !== '' ? (value as `0x${string}`) : null;
+
     return {
       chainId,
-      number: chainBlock.number?.toString() ?? '0',
-      hash: chainBlock.hash as string,
-      parentHash: (chainBlock.parentHash as string) ?? null,
+      number: bignumValue(chainBlock.number) ?? 0n,
+      hash: chainBlock.hash as `0x${string}`,
+      parentHash: hexValue(chainBlock.parentHash),
       timestamp: blockTimestampSeconds,
-      miner: (chainBlock.miner as string) ?? null,
-      gasLimit: chainBlock.gasLimit?.toString() ?? null,
-      gasUsed: chainBlock.gasUsed?.toString() ?? null,
-      baseFeePerGas: chainBlock.baseFeePerGas?.toString() ?? null,
+      miner: hexValue(chainBlock.miner),
+      gasLimit: bignumValue(chainBlock.gasLimit),
+      gasUsed: bignumValue(chainBlock.gasUsed),
+      baseFeePerGas: bignumValue(chainBlock.baseFeePerGas),
       transactionCount: Array.isArray(chainBlock.transactions) ? chainBlock.transactions.length : 0,
-      sizeBytes: chainBlock.size ? Number(chainBlock.size) : null,
-      difficulty: chainBlock.difficulty?.toString() ?? null,
-      totalDifficulty: chainBlock.totalDifficulty?.toString() ?? null,
-      extraData: (chainBlock.extraData as string) ?? null,
-      logsBloom: (chainBlock.logsBloom as string) ?? null,
-      stateRoot: (chainBlock.stateRoot as string) ?? null,
-      transactionsRoot: (chainBlock.transactionsRoot as string) ?? null,
-      receiptsRoot: (chainBlock.receiptsRoot as string) ?? null,
+      sizeBytes:
+        chainBlock.size === null || chainBlock.size === undefined ? null : Number(chainBlock.size),
+      difficulty: bignumValue(chainBlock.difficulty),
+      totalDifficulty: bignumValue(chainBlock.totalDifficulty),
+      extraData: hexValue(chainBlock.extraData),
+      logsBloom: hexValue(chainBlock.logsBloom),
+      stateRoot: hexValue(chainBlock.stateRoot),
+      transactionsRoot: hexValue(chainBlock.transactionsRoot),
+      receiptsRoot: hexValue(chainBlock.receiptsRoot),
     };
   };
 
@@ -142,12 +159,10 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
     await db
       .insert(blocks)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .values(values as any)
+      .values(values)
       .onConflictDoUpdate({
         target: [blocks.chainId, blocks.number],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        set: values as any,
+        set: values,
       });
 
     const inserted = await db

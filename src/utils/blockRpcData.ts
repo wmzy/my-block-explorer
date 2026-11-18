@@ -574,7 +574,9 @@ export const getTransactionByHash = async (
   ]);
 
   let blockTimestamp: bigint | undefined;
-  if (tx.blockNumber) {
+  // Presence test, never truthiness: blockNumber 0n (a genesis transaction)
+  // is falsy but real.
+  if (tx.blockNumber != null) {
     const block = await client.getBlock({ blockNumber: tx.blockNumber }).catch(() => null);
     blockTimestamp = block?.timestamp;
   }

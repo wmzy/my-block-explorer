@@ -23,11 +23,6 @@ import { addressScanJobs, db, indexingRanges } from '../database/init';
 import { parseMainDbPath } from '../database/dbPath';
 import { appVersion } from '../version';
 
-// Re-exported for the existing public surface (tests import it from here);
-// the implementation lives in the import-free leaf so the uninstall CLI can
-// share it without pulling the database graph.
-export { parseMainDbPath };
-
 // --- Pure helpers (unit-tested with injected inputs) ---
 
 /** Count + total size of a file listing — the shape of every fs section. */
@@ -111,9 +106,6 @@ export function groupCountsByChain(
     })
     .sort((a, b) => a.chainId - b.chainId);
 }
-
-// parseMainDbPath moved to src/database/dbPath.ts (shared with the
-// uninstall CLI); re-exported above.
 
 // --- Section types (mirrored by the frontend service, src/services/opsSummary.ts) ---
 

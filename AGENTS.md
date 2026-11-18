@@ -2592,3 +2592,48 @@ pnpm typecheck           # tsc --noEmit
   believe the line numbers); (3) `vitest --changed` did NOT select the
   MCP suites for src/mcp changes — name them explicitly, one positional
   per invocation (the AND-filter gotcha again).
+
+- **2026-11-18 duplication review fix wave round 16 (4 read-only scouts +
+  Main-sequenced fixes)** — 7 findings adjudicated (6 fixed, 1 deferred);
+  the surface has converged: Views, Shared-leaves, and
+  backend-routing/middleware/MCP scopes all reported "surface clean",
+  and every remaining finding lived in the DB/services seam. **Closed:
+  the last `as any` in src/services** — BlockService's insert carried
+  `values as any` + two eslint-disables because `buildBlockValues`
+  coerced bignum columns to decimal STRINGS while the schema's
+  customType contract is `data: bigint` (toDriver stringifies). The
+  builder now returns the schema's insert shape (bigint bignums,
+  `0x${string}` hex, presence tests — `sizeBytes: 0` was another
+  truthiness-drop), and `formatBlock` routes every bignum field through
+  a shared `toBigintOrUndefined` — required because formatBlock serves
+  BOTH row shapes: drizzle fromDriver rows (bigint — pinned by
+  dbTimestampSeconds's "verified against a real adapter" fixture) AND
+  the synthesized buildBlockValues rows; its old comment admitted the
+  truthiness form "gets away with it only because a bignum zero arrives
+  as the truthy string '0'", which was only ever true on the synth path.
+  difficulty/totalDifficulty now actually match their declared `string`
+  type (`?.toString()`). **Falsy-zero class recurrence**
+  (utils/blockRpcData `getTransactionByHash`): `if (tx.blockNumber)`
+  skipped block-timestamp enrichment for genesis transactions (0n is
+  falsy) — now `!= null`; the class keeps regrowing, keep grepping it.
+  **Dead weight** — `duckdbIndex` re-export (zero importers; the
+  schema's own NOTE explains indexes are hand-written in migrations),
+  OpsService's `parseMainDbPath` move-shim (sole consumer was the ops
+  test, now importing `@/database/dbPath` directly), and the ENTIRE
+  `src/database/README.md` (428 lines describing a superseded design:
+  phantom `duckdbBigint`→VARCHAR(32)/`duckdbTimestamp` constructors,
+  "zero runtime conversion", "reads come back as strings" — actively
+  misleading; db-types.ts + database/AGENTS.md are the living truth, and
+  the AGENTS KEY TYPES bignum line ("BIGINT → VARCHAR(32)") was itself
+  wrong and corrected to BIGNUM/bigint). **Doc-truth** — the adapter
+  constructor's mkdir rationale cited the per-chain event stores deleted
+  in the 2026-11-09 wave; rewritten around DATABASE_URL portability.
+  **Scout discipline held again**: the adapter comment's reported line
+  numbers had drifted ~25 lines (re-grep by content, not line);
+  ScoutShared flagged the 0n timestamp guard "below the payoff bar" but
+  it is the documented falsy-zero class — Main adjudication upgraded it.
+  Deferred: BalanceHistory chart-path construction partially re-rolls
+  the geometry builder (~10 lines; gap-splitting genuinely diverged —
+  Address-view micro-extraction family). All verified: tsc 0 errors,
+  eslint 0 errors on touched files, `vitest --changed --maxWorkers=4`
+  141 files / 1588 tests green, `pnpm build` green.

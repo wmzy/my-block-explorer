@@ -17,9 +17,9 @@ import {
   countByStatus,
   deriveChainFileMeta,
   groupCountsByChain,
-  parseMainDbPath,
   summarizeFiles,
 } from '@/services/OpsService';
+import { parseMainDbPath } from '@/database/dbPath';
 
 describe('summarizeFiles', () => {
   it('totals count and bytes over a listing', () => {
