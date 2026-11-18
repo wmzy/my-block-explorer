@@ -28,6 +28,14 @@ vi.mock('@/services/RpcManager', () => ({
   rpcManager: { reloadConfigs: mocks.reloadConfigs },
 }));
 
+// The POST carries the rpc-config-write rate bucket in production; these
+// tests pin the validation contract (the compileVerifyRoutes pattern —
+// the limiter is pass-through here so 12 rapid posts all reach the
+// handler).
+vi.mock('@/middleware/rate-limit', () => ({
+  createRateLimiter: () => async (_c: unknown, next: () => Promise<void>) => next(),
+}));
+
 vi.mock('@/database/init', () => ({
   userRpcConfigs: {},
   db: {

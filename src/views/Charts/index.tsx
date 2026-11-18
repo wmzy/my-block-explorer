@@ -21,7 +21,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
 import { ownResult } from '@/util/useQuery';
 import { formatNumber } from '@/utils/format';
-import { shimmerPulse } from '@/components/ui/skeleton';
+import { chartSkeletonShape, shimmerPulse } from '@/components/ui/skeleton';
 import { formatGwei } from '@/services/gasHistory';
 import {
   CHART_DAY_COUNT,
@@ -230,17 +230,13 @@ const unavailableStyle = css`
   text-align: center;
 `;
 
-// Chart-shaped first-load placeholder: the shared shimmer pulse
-// (components/ui/skeleton) over this surface's border block — opacity
-// pulse only (compositor-friendly), reduced-motion opt-out included.
+// Chart-shaped first-load placeholder: the shared shimmer + chart shape
+// (components/ui/skeleton) with this surface's height.
 const skeletonChart = cx(
   shimmerPulse,
+  chartSkeletonShape,
   css`
-    display: block;
-    width: 100%;
     height: 140px;
-    background: var(--haze-color-border);
-    border-radius: var(--haze-radius-sm, 4px);
   `,
 );
 

@@ -11,6 +11,7 @@ import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { redactUrl, requestSeesFullUrl } from '../middleware/rpc-url-visibility';
 import { readJsonBody, respondError } from '../utils/api-error';
 import { parseHttpUrl } from '../utils/validation';
+import { createRateLimiter } from '../middleware/rate-limit';
 
 const app = new Hono();
 
@@ -49,7 +50,14 @@ app.get('/rpc-configs', async c => {
 
 // Writes use the opt-in gate: without ADMIN_TOKEN a local session can
 // still save its RPC config; with one configured, writes require it.
-app.post('/rpc-configs', requireAdminTokenIfConfigured, async c => {
+// Same bucket class as the custom-chain register: the POST parses and
+// registers a URL the RPC manager will dial (the probe path).
+const rpcConfigWriteRateLimiter = createRateLimiter({
+  name: 'rpc-config-write',
+  requestsPerMinute: 5,
+  burst: 2,
+});
+app.post('/rpc-configs', requireAdminTokenIfConfigured, rpcConfigWriteRateLimiter, async c => {
   const body = await readJsonBody<Record<string, unknown>>(c);
   // Destructured from Record<string, unknown>: every field is unknown and
   // must earn its type through the guards below.

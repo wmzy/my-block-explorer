@@ -30,7 +30,7 @@ import { Badge } from '@/components/ui/Badge';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { EnsInline } from '@/components/ui/EnsInline';
 import { UsdValue, formatUsd } from '@/components/ui/UsdValue';
-import { shimmerPulse } from '@/components/ui/skeleton';
+import { chartSkeletonShape, shimmerPulse } from '@/components/ui/skeleton';
 import { useContractCode } from '@/services/addressRealTime';
 import { useTokenOverviewProbe } from '@/services/tokenMetadata';
 import {
@@ -385,17 +385,13 @@ const windowToggleActive = css`
   border-color: var(--haze-color-primary);
 `;
 
-// Chart-shaped loading placeholder: the shared shimmer pulse
-// (components/ui/skeleton) over this surface's border block —
-// opacity-only animation, so it stays on the compositor.
+// Chart-shaped loading placeholder: the shared shimmer + chart shape
+// (components/ui/skeleton) with this surface's height.
 const priceChartSkeleton = cx(
   shimmerPulse,
+  chartSkeletonShape,
   css`
-    display: block;
-    width: 100%;
     height: 96px;
-    border-radius: var(--haze-radius-sm, 4px);
-    background: var(--haze-color-border);
   `,
 );
 

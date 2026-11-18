@@ -132,9 +132,8 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
   const bigToDecimal = (value: unknown): string =>
     typeof value === 'bigint' || typeof value === 'number' ? String(value) : '0';
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const formatTransaction = (dbTx: any): Transaction => {
-    const row = dbTx as Record<string, unknown>;
+  const formatTransaction = (dbTx: Record<string, unknown>): Transaction => {
+    const row = dbTx;
     return {
       chainId: num(row, 'chainId', 'chain_id') ?? 0,
       hash: str(row, 'hash', 'hash') ?? '',
@@ -169,10 +168,15 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
     };
   };
 
+  // Seconds, matching the `timestamp` column's customType contract
+  // (db-types.ts toDriver multiplies by 1000 — a Date or ISO string would
+  // hit `value * 1000` as NaN and throw at insert time). Null when the
+  // block row is absent: the block's time is then genuinely unknown, not
+  // zero.
   const getBlockTimestamp = async (
     chainId: number,
     blockNumber: bigint,
-  ): Promise<string | null> => {
+  ): Promise<number | null> => {
     try {
       const blockResult = await db
         .select({ timestamp: blocks.timestamp })
@@ -181,7 +185,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         .limit(1);
 
       const ts = blockResult[0]?.timestamp;
-      return ts != null ? new Date(Number(ts) * 1000).toISOString() : null;
+      return ts != null ? Number(ts) : null;
     } catch (error) {
       logger.warn({ err: error, blockNumber }, 'Failed to get block timestamp');
       return null;
@@ -236,18 +240,24 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       receipt?.cumulativeGasUsed != null ? BigInt(receipt.cumulativeGasUsed) : null,
   });
 
-  // The row a transaction would be stored as. Factored out of
-  // indexTransaction so the read path can answer from the same mapping
-  // WITHOUT the cache write.
+  // The full insert row, built on toStoredRow and typed as the schema's
+  // insert shape (the BlockService buildBlockValues contract) — the shape
+  // is checked against the column customTypes, so a wrong timestamp form
+  // (or any future field drift) fails here at compile time instead of
+  // surfacing as an insert-time throw inside drizzle's toDriver.
   const buildTransactionValues = async (
     chainId: number,
     tx: ViemTransaction,
     receipt: TransactionReceipt | null | undefined,
     indexedAt: Date | null,
-  ) => {
-    const timestamp = receipt?.blockNumber
-      ? await getBlockTimestamp(chainId, BigInt(receipt.blockNumber))
-      : null;
+  ): Promise<typeof transactions.$inferInsert> => {
+    // Presence, not truthiness: blockNumber 0n is a mined genesis
+    // receipt — skipping the timestamp lookup for it would persist NULL
+    // for exactly the first block of the chain (the falsy-zero class).
+    const timestamp =
+      receipt?.blockNumber != null
+        ? await getBlockTimestamp(chainId, BigInt(receipt.blockNumber))
+        : null;
 
     return {
       ...toStoredRow(chainId, tx, receipt ?? null),
@@ -261,8 +271,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
     tx: ViemTransaction,
     receipt?: TransactionReceipt | null,
   ): Promise<Transaction> => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transactionData: any = await buildTransactionValues(chainId, tx, receipt, new Date());
+    const transactionData = await buildTransactionValues(chainId, tx, receipt, new Date());
 
     await db
       .insert(transactions)

@@ -2637,3 +2637,50 @@ pnpm typecheck           # tsc --noEmit
   Address-view micro-extraction family). All verified: tsc 0 errors,
   eslint 0 errors on touched files, `vitest --changed --maxWorkers=4`
   141 files / 1588 tests green, `pnpm build` green.
+
+- **2026-11-18 duplication review fix wave round 17 (4 read-only scouts +
+  Main-sequenced fixes)** — 16 findings adjudicated (9 fixed, 7
+  documented/skipped); services+routes scopes reported near-clean, and
+  the round's two real finds came from Main's own cross-cutting sweeps
+  (falsy-zero greps + the round-16 `as any` follow-through), not the
+  scouts. **Real bug fixed (TransactionService, pre-existing)** — the
+  tx-indexing write path NEVER successfully cached: `timestamp` went in
+  as an ISO string against the `timestamp()` customType whose contract
+  is SECONDS numbers (toDriver does `value * 1000` → NaN →
+  `Date(NaN).toISOString()` throws inside drizzle; `cacheTransaction`'s
+  catch masked it as an eternal warn+fallback, `indexBlockTransactions`
+  swallowed it whole), AND genesis receipts (blockNumber 0n, falsy)
+  skipped the lookup. `buildTransactionValues` is now typed
+  `Promise<typeof transactions.$inferInsert>` (the round-16 BlockService
+  contract — this is what exposed the shape lie) and returns seconds;
+  regression-pinned in falsyZeroWritePath (red on both pre-fix states).
+  **MCP** — `getTransactionWithReceipt` only maps
+  `TransactionReceiptNotFoundError` to null; transport errors rethrow
+  (receipt-laundering rule). **Canonicals** — `formatDecimalString`
+  (format.ts; `formatGasString` = its gas-domain name; Address's
+  `formatBlockNumber` twin deleted), `chartSkeletonShape`
+  (components/ui/skeleton; Charts/Token placeholder css folded, heights
+  site-local), `explorerLinks` (config/externalTools, 3 builders).
+  **Routes** — debug.ts: `readJsonBody` hoisted ABOVE the try (malformed
+  body = 400 `invalid_json`, was 500 `query_failed`) + `respondError`;
+  new buckets `storage-read` 60·20 (`GET .../storage/:slot`, live
+  getStorageAt) and `rpc-config-write` 5·2 (`POST /api/rpc-configs`),
+  both live-verified via /api/ops/summary bucket stats (80 rejected at
+  burst capacity). **Dead** — `hasRpcPresets`. **Documented lookalikes
+  (do NOT unify)** — SearchService↔contractDirectory
+  CachedContractSummary/LocalContractHit (wire-mirror pair, comments
+  cross-reference both sides); watchlist's inline two-tier check (needs
+  `validity.tier` for its rejection, which checksummedAddressOrNull
+  collapses); storage-route slot parsing (deliberately stricter than
+  parseSlotNumber — rejects the 64-nibble unpadded Sourcify form).
+  **Rules pinned**: (1) `timestamp()` columns take SECONDS NUMBERS on
+  the write path — `datetime()` columns take Dates; a buildXxxValues
+  without `$inferInsert` typing can silently violate either (this is the
+  second such bug; BlockService round 16 was the first). (2) Verifying a
+  rate bucket needs the /api/ops/summary `rateLimit.buckets` readout —
+  sequential curls under budget prove nothing (round 17 initially
+  "failed" to trip a 60/min·20 bucket with 44 requests because the
+  budget was never exceeded; the ops stats named hits/rejected exactly).
+  All verified: tsc 0, eslint 0 errors on touched files, MCP suites
+  50/50 by name, `vitest --changed --maxWorkers=4` green, `pnpm build`
+  green, live curl smoke on a throwaway-DB server.

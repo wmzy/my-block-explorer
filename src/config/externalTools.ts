@@ -5,7 +5,11 @@ export type ExternalTool = {
   url: string;
 };
 
-export function getExternalToolLinks(chainId: number, address: string): ExternalTool[] {
+// The explorer + Routescan pair every entity kind shares: the chain's
+// own explorer (when it declares one) plus the universal Routescan
+// fallback, both under the kind's path segment. Address adds the EVMole
+// row on top (it is address-specific); tx/block have no third tool.
+function explorerLinks(chainId: number, segment: 'address' | 'tx' | 'block', value: string): ExternalTool[] {
   const chain = getChainInfo(chainId);
   const links: ExternalTool[] = [];
 
@@ -13,14 +17,20 @@ export function getExternalToolLinks(chainId: number, address: string): External
   if (explorerUrl) {
     links.push({
       name: chain.blockExplorers?.default?.name ?? 'Explorer',
-      url: `${explorerUrl}/address/${address}`,
+      url: `${explorerUrl}/${segment}/${value}`,
     });
   }
 
   links.push({
     name: 'Routescan',
-    url: `https://routescan.io/address/${address}`,
+    url: `https://routescan.io/${segment}/${value}`,
   });
+
+  return links;
+}
+
+export function getExternalToolLinks(chainId: number, address: string): ExternalTool[] {
+  const links = explorerLinks(chainId, 'address', address);
 
   const chainShortName = getChainShortName(chainId);
   if (chainShortName) {
@@ -34,43 +44,11 @@ export function getExternalToolLinks(chainId: number, address: string): External
 }
 
 export function getExternalTxLinks(chainId: number, txHash: string): ExternalTool[] {
-  const chain = getChainInfo(chainId);
-  const links: ExternalTool[] = [];
-
-  const explorerUrl = chain?.blockExplorers?.default?.url;
-  if (explorerUrl) {
-    links.push({
-      name: chain.blockExplorers?.default?.name ?? 'Explorer',
-      url: `${explorerUrl}/tx/${txHash}`,
-    });
-  }
-
-  links.push({
-    name: 'Routescan',
-    url: `https://routescan.io/tx/${txHash}`,
-  });
-
-  return links;
+  return explorerLinks(chainId, 'tx', txHash);
 }
 
 export function getExternalBlockLinks(chainId: number, blockNumber: string): ExternalTool[] {
-  const chain = getChainInfo(chainId);
-  const links: ExternalTool[] = [];
-
-  const explorerUrl = chain?.blockExplorers?.default?.url;
-  if (explorerUrl) {
-    links.push({
-      name: chain.blockExplorers?.default?.name ?? 'Explorer',
-      url: `${explorerUrl}/block/${blockNumber}`,
-    });
-  }
-
-  links.push({
-    name: 'Routescan',
-    url: `https://routescan.io/block/${blockNumber}`,
-  });
-
-  return links;
+  return explorerLinks(chainId, 'block', blockNumber);
 }
 
 const CHAIN_SHORT_NAMES: Record<number, string> = {

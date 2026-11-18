@@ -134,6 +134,61 @@ describe('indexing a genesis transaction', () => {
     expect(inserted[0].blockNumber).toBeNull();
     expect(inserted[0].nonce).toBe(5n);
   });
+
+  it('resolves the block timestamp for a GENESIS receipt and stores seconds, not an ISO string', async () => {
+    // A mined genesis receipt: blockNumber 0n is falsy, so the old
+    // truthiness guard skipped the timestamp lookup entirely; and when it
+    // did run, it handed the column an ISO string — the timestamp
+    // customType's toDriver multiplies by 1000, so `'<iso>' * 1000` is
+    // NaN and every insert threw inside drizzle (swallowed upstream as
+    // "failed to cache/index"). The row must carry SECONDS (a number),
+    // the column's own contract.
+    const genesisReceipt = {
+      blockNumber: 0n,
+      status: 'success',
+      gasUsed: 21_000n,
+      cumulativeGasUsed: 21_000n,
+      effectiveGasPrice: 1_000_000_000n,
+      contractAddress: null,
+      logs: [],
+      transactionIndex: 0,
+      type: 'eip1559',
+    };
+    // Field-list selects are the blocks-table timestamp probe in this
+    // flow; plain selects read transaction rows (empty until the insert).
+    const chain = (rows: unknown[]): unknown => {
+      const node: Record<string, unknown> = {};
+      for (const method of ['from', 'where', 'orderBy', 'limit', 'offset', 'groupBy']) {
+        node[method] = () => node;
+      }
+      node.then = (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+        Promise.resolve(rows).then(resolve, reject);
+      return node;
+    };
+    const inserted: Array<Record<string, unknown>> = [];
+    const service = createTransactionService({
+      db: {
+        select: (...args: unknown[]) =>
+          chain(args.length > 0 ? [{ timestamp: 1_700_000_000 }] : inserted),
+        insert: () => ({
+          values: (values: Record<string, unknown>) => {
+            inserted.push(values);
+            return { onConflictDoUpdate: async () => undefined };
+          },
+        }),
+      } as never,
+      transactions: asAny({}),
+      blocks: asAny({}),
+      rpcManager: asAny({
+        getClient: async () => genesisClient(genesisTx, genesisReceipt),
+      }),
+    });
+
+    await service.getTransactionByHash(CHAIN_ID, HASH);
+
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].timestamp).toBe(1_700_000_000);
+  });
 });
 
 describe('block statistics for a chain whose only indexed block is genesis', () => {

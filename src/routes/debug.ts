@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { createLogger } from '../server/logger';
 import { db } from '../database/init';
 import { sql } from 'drizzle-orm';
-import { createApiError } from '../utils/api-error';
+import { readJsonBody, respondError } from '../utils/api-error';
 import { errorMessage } from '../utils/errorHandler';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 
@@ -30,12 +30,16 @@ app.use('/db/*', requireAdminTokenIfConfigured);
  * Execute arbitrary SQL query against DuckDB (development only)
  */
 app.post('/db/query', async c => {
-  try {
-    const body = await c.req.json<{ sql: string }>();
-    const { sql: query } = body;
+  // Parsed ABOVE the try on purpose: a malformed body must answer the
+  // repo-wide 400 invalid_json (readJsonBody throws a prebuilt
+  // HTTPException that app.onError replays verbatim), not fall into the
+  // catch below and surface as an opaque 500 query_failed.
+  const body = await readJsonBody<{ sql?: unknown }>(c);
+  const query = body.sql;
 
+  try {
     if (!query || typeof query !== 'string') {
-      return c.json(createApiError(400, 'invalid_query', 'Missing or invalid sql parameter'), 400);
+      return respondError(c, 400, 'invalid_query', 'Missing or invalid sql parameter');
     }
 
     // Warn about dangerous operations
@@ -53,10 +57,7 @@ app.post('/db/query', async c => {
     });
   } catch (error) {
     logger.error({ err: error }, 'Debug DB query error');
-    return c.json(
-      createApiError(500, 'query_failed', errorMessage(error, 'Unknown error')),
-      500,
-    );
+    return respondError(c, 500, 'query_failed', errorMessage(error, 'Unknown error'));
   }
 });
 

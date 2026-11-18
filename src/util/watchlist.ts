@@ -64,6 +64,10 @@ export function readWatchlist(): string[] {
  * an explicit rejection (never a silent drop of an older entry).
  */
 export function addWatchlistEntry(raw: string): WatchlistAddResult {
+  // Inline on purpose rather than through checksummedAddressOrNull: the
+  // rejection must carry validity.tier (which tier failed), and the
+  // canonical helper collapses that to null — re-validating inside it
+  // would be a second pass for no gain.
   const trimmed = raw.trim();
   const validity = checkAddressValidity(trimmed);
   if (!validity.valid) {

@@ -125,7 +125,3 @@ export const RPC_PRESETS: Record<number, RpcPreset[]> = {
 export function getRpcPresets(chainId: number): RpcPreset[] {
   return RPC_PRESETS[chainId] || [];
 }
-
-export function hasRpcPresets(chainId: number): boolean {
-  return chainId in RPC_PRESETS && RPC_PRESETS[chainId].length > 0;
-}

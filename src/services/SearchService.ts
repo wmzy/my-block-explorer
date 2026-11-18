@@ -418,6 +418,11 @@ export const CONTRACT_DIRECTORY_MAX_OFFSET = 100_000;
 // section is a shortcut into the directory, not the directory itself.
 export const LOCAL_CONTRACT_SEARCH_LIMIT = 5;
 
+// Wire-mirror pair: these shapes are ALSO declared in the frontend
+// services/contractDirectory.ts (the directory + search free-text hits
+// share one wire contract). Backend owns the producing side; if a field
+// changes here, change the mirror in the same commit (the
+// TokenTransferStandard/SignatureKind mirror convention).
 export type CachedContractSummary = {
   chainId: number;
   address: string;

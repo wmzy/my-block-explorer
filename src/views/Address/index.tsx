@@ -93,6 +93,7 @@ import {
   cellText,
   formatBigInt,
   formatDateTime,
+  formatDecimalString,
   formatHash,
   formatNativeDisplay,
   formatNumber,
@@ -1719,15 +1720,9 @@ export default function Address() {
   const directionLabel = { in: 'IN', out: 'OUT', self: 'SELF' } as const;
 
   // BigInt-safe block number display (exact, locale-stable grouping);
-  // falls back to the raw string when a row arrives without a parseable
-  // number (pending txs).
-  const formatBlockNumber = (n: string) => {
-    try {
-      return formatBigInt(BigInt(n));
-    } catch {
-      return n;
-    }
-  };
+  // unparseable rows (pending txs) render the raw string — the shared
+  // formatDecimalString contract.
+  const formatBlockNumber = formatDecimalString;
 
   const formatTxValue = (value: string) => {
     const symbol = getChainSymbol(currentChainId);

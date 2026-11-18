@@ -9,6 +9,51 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-18 duplication review fix wave round 17 (4 read-only scouts +
+  Main-sequenced fixes)** — 16 findings adjudicated (9 fixed, 7
+  skipped/documented); the residual surface keeps shrinking (services and
+  routes scopes reported near-clean; the real finds came from Main's own
+  cross-cutting sweeps). **Real bug: TransactionService timestamp column
+  writes** — `buildTransactionValues` handed the `timestamp` column an
+  ISO STRING while the column's customType contract is seconds NUMBERS
+  (`toDriver` multiplies by 1000 — `'<iso>' * 1000` is NaN, so every
+  insert with a resolvable block timestamp threw inside drizzle and was
+  swallowed upstream: block tx caching never landed, tx-by-hash fell
+  back to the in-memory path on every read). Compounding falsy-zero:
+  `receipt?.blockNumber ? …` skipped the lookup entirely for genesis
+  receipts (0n). Fixed to seconds + `!= null` presence, the builder is
+  now typed `Promise<typeof transactions.$inferInsert>` (BlockService
+  round-16 contract) and both `any`s + eslint-disables are gone;
+  regression-pinned in `tests/unit/falsyZeroWritePath.test.ts` (red on
+  pre-fix code, both failure modes). **MCP receipt honesty** —
+  `getTransactionWithReceipt`'s `.catch(() => null)` laundered transport
+  failures into "no receipt" for transactions already known to be mined;
+  only viem's `TransactionReceiptNotFoundError` maps to null now,
+  everything else rethrows. **Dead** — `hasRpcPresets`
+  (config/rpcPresets, zero importers). **Canonicals** —
+  `formatDecimalString` in utils/format.ts (the gas-string formatter
+  generalized; `formatGasString` stays as its gas-domain name, Address's
+  hand-rolled `formatBlockNumber` twin deleted);
+  `chartSkeletonShape` in components/ui/skeleton (Charts/Token
+  chart-placeholder css pair folded, heights stay site-local);
+  `explorerLinks` private helper in config/externalTools (the three
+  explorer+Routescan builders). **Routes** — debug.ts uses
+  `readJsonBody` hoisted above its try (malformed SQL bodies answer the
+  repo-wide 400 `invalid_json`, was an opaque 500 `query_failed`) +
+  `respondError`; two live-RPC endpoints gained the rate buckets their
+  siblings always had (`storage-read` 60/min·20 on
+  `GET .../storage/:slot`, `rpc-config-write` 5/min·2 on
+  `POST /api/rpc-configs`) — both verified live (ops stats: 80 rejected
+  at exactly burst capacity; 429 by the 3rd write). **Documented, not
+  unified** — SearchService↔contractDirectory `CachedContractSummary`/
+  `LocalContractHit` are a wire-mirror pair (backend produces, frontend
+  consumes; cross-referenced comments now mark both, the
+  TokenTransferStandard convention); watchlist's inline two-tier check
+  stays (its rejection needs `validity.tier`, which the
+  checksum-or-reject canonical collapses — comment added);
+  storage-route slot parsing stays deliberately stricter than
+  `parseSlotNumber`.
+
 - **2026-11-18 duplication review fix wave round 16 (4 read-only scouts +
   Main-sequenced fixes)** — 7 findings adjudicated (6 fixed, 1 deferred);
   the tiers are converging: Views/Shared/backend-routing scopes reported

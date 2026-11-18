@@ -8,6 +8,9 @@ import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery'
 // Page size the directory view requests; the backend caps limits at 100.
 export const CONTRACT_DIRECTORY_PAGE_SIZE = 50;
 
+// Wire-mirror pair: SearchService.ts declares the same two shapes on the
+// producing (backend) side — change both in the same commit (the
+// TokenTransferStandard/SignatureKind mirror convention).
 export type CachedContractSummary = {
   chainId: number;
   address: string;

@@ -57,6 +57,18 @@ export const shimmerPulse = css`
   }
 `;
 
+// Chart-shaped placeholder block: the shared surface (full-width block
+// element on the border color, rounded like every skeleton) with the
+// height left to the site — the one genuinely different dimension per
+// chart (140px Charts series, 96px Token price sparkline). Composes
+// with shimmerPulse via cx (the Home feed skeleton convention).
+export const chartSkeletonShape = css`
+  display: block;
+  width: 100%;
+  background: var(--haze-color-border);
+  border-radius: var(--haze-radius-sm, 4px);
+`;
+
 // Wide-row placeholder shimmer (1.2s): a highlight gradient sweeping
 // across the surface via background-position — the approvals-table
 // convention. Genuinely different from the opacity pulses above (it

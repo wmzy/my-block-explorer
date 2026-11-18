@@ -245,22 +245,24 @@ export function formatBigInt(value: bigint): string {
 }
 
 /**
- * Format a gas quantity that travels as a decimal string.
- *
- * Gas quantities are on-chain integers serialized as strings: format
- * them BigInt-safe with the shared exact grouping helper (Number
- * coercion would silently lose precision past 2^53, and a bare
- * toLocaleString followed the host locale). A string BigInt cannot parse
- * (a provider quirk, a placeholder) is renderer intent, not an error —
- * returned verbatim.
+ * Decimal-string quantities (gas values, block numbers) rendered
+ * BigInt-safe with the shared exact grouping helper — Number coercion
+ * would silently lose precision past 2^53, and a bare toLocaleString
+ * followed the host locale. A string BigInt cannot parse (a provider
+ * quirk, a placeholder) is renderer intent, not an error — returned
+ * verbatim. BigInt's own leniency is preserved and pinned by tests:
+ * BigInt('') is 0n and BigInt('0x1a') parses as hex. formatGasString is
+ * the gas-domain name the block/tx detail surfaces call it by.
  */
-export function formatGasString(gas: string): string {
+export function formatDecimalString(value: string): string {
   try {
-    return formatBigInt(BigInt(gas));
+    return formatBigInt(BigInt(value));
   } catch {
-    return gas;
+    return value;
   }
 }
+
+export const formatGasString = formatDecimalString;
 
 /**
  * How the fractional part of a native amount is rendered by

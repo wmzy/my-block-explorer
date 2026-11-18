@@ -8,6 +8,7 @@ import { safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
 import { parseDecimalBigInt } from '../utils/strictInteger';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
+import { createRateLimiter } from '../middleware/rate-limit';
 
 const logger = createLogger('storage-routes');
 
@@ -71,7 +72,15 @@ app.delete(
   },
 );
 
-app.get('/chains/:chainId/contracts/:address/storage/:slot', async c => {
+// One live eth_getStorageAt RPC per request — the same exposure class as
+// the contract read/simulate routes, so it gets its own bucket (the
+// documented public API still pols freely; a runaway loop does not).
+const storageReadRateLimiter = createRateLimiter({
+  name: 'storage-read',
+  requestsPerMinute: 60,
+  burst: 20,
+});
+app.get('/chains/:chainId/contracts/:address/storage/:slot', storageReadRateLimiter, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
   const slotParam = c.req.param('slot');

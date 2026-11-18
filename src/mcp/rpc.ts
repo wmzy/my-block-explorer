@@ -14,7 +14,7 @@
 // depends on a small structural interface (RpcReader) that tests can stub
 // without a network.
 
-import { createPublicClient, http, toHex, type Abi, type AbiFunction, type Address, type Chain, type PublicClient } from 'viem';
+import { createPublicClient, http, toHex, TransactionReceiptNotFoundError, type Abi, type AbiFunction, type Address, type Chain, type PublicClient } from 'viem';
 import { getChainInfo } from '@/config/chains';
 import { listCustomChainIds, registerCustomChain, removeCustomChain, type CustomChain } from '@/config/customChains';
 import type { ExplorerApi } from './rest';
@@ -236,10 +236,17 @@ export class RpcGateway implements RpcReader {
   ): Promise<{ transaction: unknown; receipt: unknown | null }> {
     const { client } = await this.clientFor(chainId);
     const transaction = (await client.getTransaction({ hash })) as { blockNumber: bigint | null } | null;
-    // Pending transactions have no receipt yet; that is a state, not an error.
+    // Pending transactions have no receipt yet; that is a state, not an
+    // error. Only viem's receipt-not-found may map to null — anything
+    // else is a transport failure and rethrows: swallowing it would
+    // launder a failed read into plausible absence for a transaction we
+    // already know is mined (the receipt-laundering rule).
     let receipt: unknown = null;
     if (transaction !== null && transaction.blockNumber !== null) {
-      receipt = await client.getTransactionReceipt({ hash }).catch(() => null);
+      receipt = await client.getTransactionReceipt({ hash }).catch(error => {
+        if (error instanceof TransactionReceiptNotFoundError) return null;
+        throw error;
+      });
     }
     return { transaction, receipt };
   }
