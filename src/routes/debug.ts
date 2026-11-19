@@ -5,10 +5,21 @@ import { sql } from 'drizzle-orm';
 import { readJsonBody, respondError } from '../utils/api-error';
 import { errorMessage } from '../utils/errorHandler';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
+import { createRateLimiter } from '../middleware/rate-limit';
 
 const logger = createLogger('debug-routes');
 
 const app = new Hono();
+
+// Same bucket shape as the SQL console's sql-query limiter: this is the
+// other ad-hoc raw-SQL surface, and (unlike the console) it accepts
+// arbitrary statements — dev-only behind ENABLE_DEBUG_API, but a runaway
+// loop spamming it still deserves the same backpressure.
+const debugQueryLimiter = createRateLimiter({
+  name: 'debug-db-query',
+  requestsPerMinute: 6,
+  burst: 3,
+});
 
 // Opt-in gate for every endpoint in this sub-app: a zero-config local
 // session keeps the SQL tool working, but once ADMIN_TOKEN is configured
@@ -29,7 +40,7 @@ app.use('/db/*', requireAdminTokenIfConfigured);
  * POST /debug/db/query
  * Execute arbitrary SQL query against DuckDB (development only)
  */
-app.post('/db/query', async c => {
+app.post('/db/query', debugQueryLimiter, async c => {
   // Parsed ABOVE the try on purpose: a malformed body must answer the
   // repo-wide 400 invalid_json (readJsonBody throws a prebuilt
   // HTTPException that app.onError replays verbatim), not fall into the

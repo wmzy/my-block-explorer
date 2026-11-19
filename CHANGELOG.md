@@ -9,6 +9,44 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-19 duplication review fix wave round 19 (4 read-only scouts +
+  Main-sequenced fixes)** — 5 findings adjudicated (4 fixed, 1 skipped
+  no-payoff); the leanest round yet: all four scopes reported clean or
+  near-clean with zero P0s, and the two real fixes were consistency gaps,
+  not duplication. **Rate-limit coverage gaps closed** — the seven event
+  range-write routes (create/quick/PATCH/DELETE/start/pause/resume) share
+  a new `event-range-write` bucket 6/min·burst 3 (same exposure class as
+  the address-scan writes: admin-opt-in gated AND kicking off long-lived
+  RPC walks; burst 3 — not the scan panel's 2 — so the realistic rapid
+  create → start → pause/delete sequence never 429s, a constraint the
+  e2e full-flow tests enforced live), and `/debug/db/query` gained the
+  `debug-db-query` bucket 6/min·burst 3 (same shape as the SQL console's
+  sql-query limiter — the other ad-hoc raw-SQL surface, which unlike the
+  console accepts arbitrary statements). Both verified live via
+  /api/ops/summary bucket stats (5 hits / 2 rejected each against
+  burst-exceeding curl sequences). Five test suites gained the
+  `resetRateLimiterState()` per-test reset (eventsRangeIdParam,
+  eventsRoutesCatchupGating, eventsRoutesErrorBodies, manual-indexing
+  e2e, debugRouteHandler — the addressScanRoutes pattern). **Doc-truth** —
+  cliArgs.ts's header no longer claims "node:util is the entire import
+  budget" (errorMessage + parseStrictInteger are import-free pure leaves;
+  the hard no-server-graph constraint was always honored). **Type-drift
+  hygiene** — Signatures.tsx's local `sourceNote` css const renamed
+  `dataSourceNote` (shadowed listToolbar's exported directory-page
+  `sourceNote` with different semantics — the round-8 formatAddress trap
+  class, module-local so cosmetic, but renamed to close the copy-paste
+  confusion risk). **Skipped** — Coverage/Legend.tsx's one-line
+  `sectionCardStyle` is byte-equal to helpStyles' canonical but the
+  canonical is explicitly scoped to the two help views (cross-view import
+  for a 1-line class = no payoff, round-8/12 precedent). **Scout
+  discipline held**: the leaves scope verified clean with importer audits
+  and explicitly declined to manufacture findings; the round-11 question
+  is settled — the wave surface has converged to point-maintenance.
+  All verified: tsc 0 errors, eslint 0 errors on touched files,
+  `vitest --changed --maxWorkers=4` 22 files / 282 tests green,
+  `pnpm build` green, live curl smoke on a throwaway-DB server (buckets
+  trip at burst, ops summary readout names them, health/debug flag OK).
+
 - **2026-11-19 duplication review fix wave round 18 (4 read-only scouts +
   Main-sequenced fixes)** — 10 findings adjudicated (8 fixed, 2 rejected on
   re-verification); the surface stays converged (all four scopes reported

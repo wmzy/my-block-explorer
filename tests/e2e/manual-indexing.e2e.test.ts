@@ -73,6 +73,7 @@ import {
   getActiveRangeJob,
 } from '@/services/EventIndexingService';
 import { contractSourceService } from '@/services/ContractSourceService';
+import { resetRateLimiterState } from '@/middleware/rate-limit';
 
 type MockFunction = ReturnType<typeof vi.fn>;
 
@@ -100,6 +101,9 @@ const rangeFixture = (overrides: Record<string, unknown> = {}) => ({
 describe('Manual Range Indexing E2E', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The mutating range routes share the event-range-write bucket
+    // (6/min·burst 3); this suite posts to them in every case.
+    resetRateLimiterState();
   });
 
   afterEach(() => {

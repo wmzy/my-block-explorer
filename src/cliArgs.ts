@@ -8,8 +8,9 @@
 // ./server precisely so `--help`, `--version` and subcommands work in an
 // empty directory without constructing the DuckDB adapter, whose
 // constructor mkdirs data/ (fabricating the very thing `uninstall`
-// measures). node:util is the entire import budget; anything richer
-// belongs in cli.ts after the kind has been decided.
+// measures). The import budget is node:util plus import-free pure leaves
+// (errorMessage, parseStrictInteger) — nothing from the server graph;
+// anything richer belongs in cli.ts after the kind has been decided.
 import { parseArgs } from 'node:util';
 import { errorMessage } from './utils/errorHandler';
 import { parseStrictInteger } from './utils/strictInteger';

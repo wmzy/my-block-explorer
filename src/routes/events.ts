@@ -511,10 +511,24 @@ app.get('/chains/:chainId/contracts/:address/events/ranges', async c => {
   }
 });
 
+// The seven mutating range routes (create/quick/PATCH/DELETE/start/pause/
+// resume) share one 6/min burst-3 bucket: like the address-scan writes
+// they are admin-opt-in gated AND kick off long-lived RPC walks (range
+// creation resolves bounds; start/resume launch indexing jobs). Burst 3
+// (not the scan panel's 2) because the range manager's realistic rapid
+// sequence is create → start → pause/delete back-to-back — that must not
+// 429; a GET poll (the UI polls every 3s) never touches this bucket.
+const eventRangeWriteLimiter = createRateLimiter({
+  name: 'event-range-write',
+  requestsPerMinute: 6,
+  burst: 3,
+});
+
 // POST /chains/:chainId/contracts/:address/events/ranges — add new range
 app.post(
   '/chains/:chainId/contracts/:address/events/ranges',
   requireAdminTokenIfConfigured,
+  eventRangeWriteLimiter,
   async c => {
     const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
     if ('error' in result) return c.json(result.error, result.status);
@@ -582,6 +596,7 @@ app.post(
 app.post(
   '/chains/:chainId/contracts/:address/events/ranges/quick',
   requireAdminTokenIfConfigured,
+  eventRangeWriteLimiter,
   async c => {
     const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
     if ('error' in result) return c.json(result.error, result.status);
@@ -732,6 +747,7 @@ app.post(
 app.patch(
   '/chains/:chainId/contracts/:address/events/ranges/:rangeId',
   requireAdminTokenIfConfigured,
+  eventRangeWriteLimiter,
   async c => {
     const params = resolveRangeParams(c.req.param('chainId'), c.req.param('address'), c.req.param('rangeId'));
     if ('error' in params) return c.json(params.error, params.status);
@@ -798,6 +814,7 @@ app.patch(
 app.delete(
   '/chains/:chainId/contracts/:address/events/ranges/:rangeId',
   requireAdminTokenIfConfigured,
+  eventRangeWriteLimiter,
   async c => {
     const params = resolveRangeParams(c.req.param('chainId'), c.req.param('address'), c.req.param('rangeId'));
     if ('error' in params) return c.json(params.error, params.status);
@@ -946,6 +963,7 @@ const startOrResumeIndexing = async (c: Context, kind: keyof typeof START_RESUME
 app.post(
   '/chains/:chainId/contracts/:address/events/ranges/:rangeId/start',
   requireAdminTokenIfConfigured,
+  eventRangeWriteLimiter,
   async c => startOrResumeIndexing(c, 'start'),
 );
 
@@ -953,6 +971,7 @@ app.post(
 app.post(
   '/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause',
   requireAdminTokenIfConfigured,
+  eventRangeWriteLimiter,
   async c => {
     const params = resolveRangeParams(c.req.param('chainId'), c.req.param('address'), c.req.param('rangeId'));
     if ('error' in params) return c.json(params.error, params.status);
@@ -1047,6 +1066,7 @@ app.post(
 app.post(
   '/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume',
   requireAdminTokenIfConfigured,
+  eventRangeWriteLimiter,
   async c => startOrResumeIndexing(c, 'resume'),
 );
 

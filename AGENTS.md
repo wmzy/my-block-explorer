@@ -2747,3 +2747,42 @@ pnpm typecheck           # tsc --noEmit
   family, SearchService scaffolding). All verified: tsc 0 errors,
   eslint 0 errors, `vitest --changed --maxWorkers=4` 252 files / 3295
   tests green, `pnpm build` green.
+
+- **2026-11-19 duplication review fix wave round 19 (4 read-only scouts +
+  Main-sequenced fixes)** — 5 findings adjudicated (4 fixed, 1 skipped
+  no-payoff); the leanest round yet: all four scopes reported clean/near-
+  clean with ZERO P0s and the utils-leaves scope found nothing at all
+  (every canonical audited: no dead exports, no header-vs-reality drift,
+  no junk-tolerant parsers). **Rate-limit consistency gaps closed** — the
+  seven event range-write routes (create/quick/PATCH/DELETE/start/pause/
+  resume in routes/events.ts) now share the `event-range-write` bucket
+  6/min·burst 3 (the addressScanWriteLimiter exposure class: admin-opt-in
+  gated writes that kick off long-lived RPC walks; BURST 3 not 2 — the
+  realistic rapid sequence create → start → pause/delete must never 429,
+  a constraint the manual-indexing e2e full-flow tests enforced live when
+  a first draft at burst 2 broke them — tests catching a real UX defect,
+  not noise), and `/debug/db/query` gained `debug-db-query` 6/min·burst 3
+  (the sql-query limiter's shape; the other ad-hoc raw-SQL surface).
+  Both live-verified via /api/ops/summary bucket stats (5 hits / 2
+  rejected each against burst-exceeding curls — round-17 rule). Five test
+  suites gained per-test `resetRateLimiterState()` (eventsRangeIdParam,
+  eventsRoutesCatchupGating, eventsRoutesErrorBodies, manual-indexing
+  e2e, debugRouteHandler — the addressScanRoutes pattern; any NEW test
+  that rapid-fires a limited route needs it too). **Doc-truth** —
+  cliArgs.ts header reworded ("node:util is the entire import budget"
+  was stale; errorMessage + parseStrictInteger are import-free pure
+  leaves, the no-server-graph constraint was always honored).
+  **Type-drift hygiene** — Signatures.tsx local css `sourceNote` renamed
+  `dataSourceNote` (shadowed listToolbar's exported directory-page
+  sourceNote with different semantics; module-local so cosmetic, closed
+  anyway). **Skipped**: Coverage/Legend.tsx's one-line `sectionCardStyle`
+  byte-equal to helpStyles' canonical — canonical is scoped to the two
+  help views by its own header; cross-view import for a 1-line class is
+  no-payoff (round-8/12 precedent). **Rule pinned**: when adding a rate
+  limiter to previously-unlimited routes, grep tests for rapid-fire
+  callers FIRST (they 429 mid-suite) and choose the burst from the
+  product's realistic rapid interaction sequence, not just the sibling
+  bucket's numbers. All verified: tsc 0, eslint 0 on touched files,
+  `vitest --changed --maxWorkers=4` 22 files / 282 tests green, `pnpm
+  build` green, throwaway-DB curl smoke (buckets trip at burst; ops
+  summary names hits/rejected).

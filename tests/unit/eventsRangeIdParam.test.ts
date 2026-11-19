@@ -9,6 +9,7 @@
 // while the client was told its input was fine. Every site in the file had
 // the same line (5 occurrences), so the whole class is fixed here.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { resetRateLimiterState } from '@/middleware/rate-limit';
 
 const mocks = vi.hoisted(() => ({
   updateIndexingRange: vi.fn(),
@@ -78,6 +79,9 @@ const JUNK_THAT_PARSES = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Every case below hits a mutating range route, all of which share the
+  // event-range-write bucket (6/min·burst 3) — reset it per test.
+  resetRateLimiterState();
   mocks.getIndexingRanges.mockResolvedValue([]);
   mocks.getActiveRangeJob.mockReturnValue(null);
   mocks.deleteIndexingRange.mockResolvedValue({ success: true });

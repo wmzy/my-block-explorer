@@ -129,7 +129,10 @@ const queryBox = css`
   min-width: 260px;
 `;
 
-const sourceNote = css`
+// Named to NOT shadow listToolbar's exported `sourceNote` (a different,
+// directory-page note style) — same-name-different-semantics is the
+// round-8 formatAddress trap class.
+const dataSourceNote = css`
   color: var(--haze-color-text-muted);
   font-size: var(--haze-text-sm);
   margin: 0 0 var(--haze-space-5);
@@ -402,7 +405,7 @@ export default function SignaturesView() {
           </Button>
         </div>
 
-        <p className={sourceNote}>
+        <p className={dataSourceNote}>
           Sourced from the openchain signature registry (public submissions — a miss is not proof no
           signature exists). Lookups are not recorded in search history.
         </p>

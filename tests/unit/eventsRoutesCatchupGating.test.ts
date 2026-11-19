@@ -20,6 +20,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { resetRateLimiterState } from '@/middleware/rate-limit';
 
 const mocks = vi.hoisted(() => ({
   gate: vi.fn(),
@@ -100,6 +101,10 @@ const post = (path: string, body: unknown) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The quick-create POSTs below share the event-range-write bucket
+  // (6/min·burst 3); a full suite of rapid posts would 429 without the
+  // per-test reset (addressScanRoutes pattern).
+  resetRateLimiterState();
   // Default gate behavior: allow through (the open/unset branch).
   mocks.gate.mockImplementation(async (_c: unknown, next: () => Promise<void>) => {
     await next();

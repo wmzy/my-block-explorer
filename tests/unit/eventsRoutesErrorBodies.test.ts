@@ -24,6 +24,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { resetRateLimiterState } from '@/middleware/rate-limit';
 
 const mocks = vi.hoisted(() => ({
   gate: vi.fn(),
@@ -95,6 +96,9 @@ const request = (path: string, init?: RequestInit) => app.request(path, init);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Range-write POSTs share the event-range-write bucket (6/min·burst 3);
+  // rapid sequential posts would 429 without the per-test reset.
+  resetRateLimiterState();
   // Default gate behavior: allow through (the open/unset branch).
   mocks.gate.mockImplementation(async (_c: unknown, next: () => Promise<void>) => {
     await next();

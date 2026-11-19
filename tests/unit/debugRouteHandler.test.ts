@@ -9,7 +9,8 @@
 //   /api/sql console route, and the non-loopback mount is refused by
 //   startupChecks — this danger is exactly why the flag defaults off),
 // - invalid input answers the createApiError envelope, not a crash.
-import { describe, it, expect, afterAll, vi } from 'vitest';
+import { describe, it, expect, afterAll, beforeEach, vi } from 'vitest';
+import { resetRateLimiterState } from '@/middleware/rate-limit';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -47,6 +48,12 @@ afterAll(async () => {
 });
 
 describe('POST /debug/db/query (mounted via ENABLE_DEBUG_API=1)', () => {
+  beforeEach(() => {
+    // The endpoint carries the debug-db-query bucket (6/min·burst 3) and
+    // some cases post up to 3 times — reset between tests.
+    resetRateLimiterState();
+  });
+
   it('executes a read query and returns the rows', async () => {
     const response = await post({ sql: 'SELECT 1 AS one' });
 
