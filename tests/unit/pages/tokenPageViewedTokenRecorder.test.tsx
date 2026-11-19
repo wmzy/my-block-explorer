@@ -53,6 +53,7 @@ vi.mock('@/config/chains', () => ({
     chainId === 1 ? { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } } : null,
   getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
   getChainSymbol: (chainId: number) => (chainId === 1 ? 'ETH' : 'UNKNOWN'),
+  getNativeDecimals: () => 18,
   isChainSupported: (chainId: number) => chainId === 1,
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
   POPULAR_CHAINS: [{ id: 1, name: 'Ethereum' }],

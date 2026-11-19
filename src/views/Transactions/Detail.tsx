@@ -20,7 +20,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { RawJsonCard, type RawJsonFetcher } from '@/components/ui/RawJson';
 import { UnitToggle } from '@/components/ui/UnitToggle';
-import { POPULAR_CHAINS, getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { POPULAR_CHAINS, getChainInfo, getChainName, getChainSymbol, getNativeDecimals } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { errorMessage } from '@/utils/errorHandler';
 import { getExternalTxLinks } from '@/config/externalTools';
@@ -473,7 +473,7 @@ function SafeMultisigCard({
   if (decoded === null) return null;
 
   const innerSelector = selectorOf(decoded.data);
-  const nativeDecimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
+  const nativeDecimals = getNativeDecimals(chainId);
 
   return (
     <Card>
@@ -602,7 +602,7 @@ function AccountAbstractionCard({
         }));
 
   const symbol = getChainSymbol(chainId);
-  const nativeDecimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
+  const nativeDecimals = getNativeDecimals(chainId);
 
   return (
     <Card>

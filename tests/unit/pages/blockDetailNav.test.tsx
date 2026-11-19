@@ -27,6 +27,7 @@ vi.mock('@/config/chains', () => ({
   getChainName: () => 'Ethereum',
   getChainType: () => 'mainnet',
   getChainSymbol: () => 'ETH',
+  getNativeDecimals: () => 18,
 }));
 
 vi.mock('@/utils/format', async importOriginal => {

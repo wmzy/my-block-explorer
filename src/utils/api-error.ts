@@ -58,6 +58,20 @@ export async function readJsonBody<T = unknown>(
   }
 }
 
+// The lenient sibling for endpoints where an EMPTY body is valid input
+// (watch's "no label" upsert, address-scan default bounds, event-range
+// ABI hints). Hono throws the same error on no body and on invalid JSON,
+// and both mean "no body" to these callers — undefined out, the caller's
+// own defaults apply. Deliberately NOT a 400 path: a malformed body on
+// these routes is not an error worth rejecting.
+export async function readOptionalJsonBody(c: Context): Promise<unknown> {
+  try {
+    return await c.req.json();
+  } catch {
+    return undefined;
+  }
+}
+
 // The shared 400 envelopes for parsePaginationParams' null results: the
 // blocks/transactions/addresses/contracts/events list routes all answer
 // a junk limit/offset/page with these exact bodies, so the error codes

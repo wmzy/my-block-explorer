@@ -1,6 +1,6 @@
 // Contracts service: source/abi/creation/storage-layout (immutable once
 // indexed), decoded function list, and the write-side contract read.
-import type { StorageLayout } from '@/types/storage';
+import type { StorageLayoutResponse as StorageLayoutEnvelope } from '@/types/storage';
 
 import { isChainSupported } from '@/config/chains';
 import { api, get, post, withSignal } from '@/util/http';
@@ -18,15 +18,13 @@ export type ContractFunctions = Record<string, unknown>;
 export type ContractCreation = Record<string, unknown>;
 export type ContractReadResult = Record<string, unknown>;
 
-// The endpoint answers {found, layout, source, ...} on 200 (a missing layout
-// is a 404 mapped to ApiError by the http layer). The hook keeps the full
-// envelope — the Storage tab needs `source` to tell explorer-verified
+// The endpoint answers {found, layout, source} on 200 — a missing layout is
+// a 404 mapped to ApiError by the http layer, so the browser type is the
+// shared envelope (types/storage) minus the backend-only `error` arm, and a
+// wire field added to the route updates this type for free. The hook keeps
+// the full envelope — the Storage tab needs `source` to tell explorer-verified
 // layouts apart from evmole bytecode inference.
-export type StorageLayoutResponse = {
-  found: boolean;
-  layout?: StorageLayout;
-  source?: 'etherscan' | 'sourcify' | 'fetcher' | 'evmole';
-};
+export type StorageLayoutResponse = Omit<StorageLayoutEnvelope, 'error'>;
 
 export function fetchContractSource(
   chainId: number,

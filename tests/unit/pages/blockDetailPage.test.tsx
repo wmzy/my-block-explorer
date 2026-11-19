@@ -69,6 +69,7 @@ vi.mock('@/config/chains', () => ({
   getChainType: (chainId: number) => (chainId === 11155111 ? 'testnet' : 'mainnet'),
   // Consumed by the Burnt Fees / withdrawals rows.
   getChainSymbol: () => 'ETH',
+  getNativeDecimals: () => 18,
   // Consumed by the Landing helpers behind UnsupportedChainState.
   isChainSupported: (chainId: number) => chainId === 1 || chainId === 11155111,
   // In-card recovery links rendered by UnsupportedChainState.

@@ -2684,3 +2684,66 @@ pnpm typecheck           # tsc --noEmit
   All verified: tsc 0, eslint 0 errors on touched files, MCP suites
   50/50 by name, `vitest --changed --maxWorkers=4` green, `pnpm build`
   green, live curl smoke on a throwaway-DB server.
+
+- **2026-11-19 duplication review fix wave round 18 (4 read-only scouts +
+  Main-sequenced fixes)** — 10 findings adjudicated (8 fixed, 2 rejected);
+  all four scopes (views/components, services/routes, shared leaves,
+  database/mcp/hooks/types/entries) reported near-clean — no P0 real bugs,
+  consistent with rounds 11–17's convergence curve. **New canonicals**:
+  `getNativeDecimals(chainId)` in config/chains.ts (the
+  `getChainInfo(id)?.nativeCurrency.decimals ?? 18` LOOKUP idiom, 9 sites
+  across views + realTimeData's now-deleted private copy; a site already
+  holding the Chain object for other purposes keeps the inline `?? 18`
+  fallback — 5 such sites stay, documented in the helper's header);
+  `readOptionalJsonBody(c)` in utils/api-error.ts (the lenient sibling of
+  readJsonBody for endpoints where an EMPTY body is valid — events
+  range-start ABI hint, address-scan default bounds, watch no-label
+  upsert; Hono throws identically on no-body and invalid JSON, both mean
+  "no body"; semantics preserved exactly: only the undefined sentinel
+  maps to the caller's default, a parsed `null` body stays null).
+  **fetchJson delegates to fetchWithTimeout** — the AbortController+
+  setTimeout budget block was a byte-equal copy; both leaves use the
+  SAME controller-pair mechanism (the round-17 jsdom fake-timer concern
+  applies to AbortSignal.timeout, NOT to this pair), so delegation is
+  safe; budget now covers through response headers per fetchWithTimeout's
+  documented contract (body .json() read uncovered, same as its other
+  callers) and utils/AGENTS.md's "fetchWithTimeout + !ok-throw + .json()"
+  line is finally true. **Type-drift traps**: services/contracts'
+  `StorageLayoutResponse` is `Omit<StorageLayoutResponse, 'error'>` off
+  types/storage's envelope (the route's 200 body never carries `error` —
+  found:false answers 404 respondError; a wire field added to the route
+  now updates the browser type for free); BlockService's
+  `buildBlockValues` gained the `typeof blocks.$inferInsert` return
+  annotation its comment had always claimed (round-17 rule). **Dead
+  exports de-exported** (importer-audited incl. tests): `specJson`
+  (routes/openapi), `MAX_RESULT_ROWS` + `normalizeSqlCell` (routes/sql —
+  sqlConsole.ts references the latter in a comment only), `jsonText`
+  (mcp/tools). **Rejected on Main re-verification**: "normalizeError is
+  dead-code" — WRONG, errorHandler uses it internally at
+  createRetryableRpcCall's retryCondition and logError (test-export of an
+  internally-used function = live, the readOnlyQueryRejection precedent);
+  the ECONNRESET/ENOTFOUND/ETIMEDOUT disjunction ×2 within errorHandler.ts
+  — same-file pair, the round-14/15 no-payoff class. **Rules pinned**:
+  (1) migrating a view onto a NEW `@/config/chains` export re-triggers
+  the round-8 rule — every factory mock of config/chains in the view's
+  test tree must model the new export; 13 suites updated this round (6
+  failing + 7 latent-but-importing). Find latent ones by grepping
+  config/chains-mocking suites whose imports reach the migrated module —
+  passing today means only that the undefined binding is never CALLED.
+  (2) The `edit` tool's fuzzy whitespace matching will happily splice an
+  old_string whose context tail does NOT exist verbatim in the file —
+  building anchors from assumed (not just-read) lines rewrote
+  `vi.mock('@/services/addressRealTime'` into a duplicate prices mock in
+  tokenPageNftItems.test.tsx, surfacing as an unrelated
+  "No IMMUTABLE_CACHE_TIME export defined on the @/services/contracts
+  mock" error two runs later. Diagnosis recipe that worked: restore the
+  HEAD version of the test file (`git show HEAD:f > tmp && cp`) and run
+  it against the current src — passing proved the src innocent and
+  isolated the corruption to the test edit; `git diff HEAD` per file then
+  showed the rewritten mock line. After any multi-file scripted edit
+  batch, audit each file's diff for exactly the intended lines.
+  Deferred list unchanged (in-flight-dedup Maps, scan ladders,
+  Address-view micro-extractions, card-recipe css, mono-right-row
+  family, SearchService scaffolding). All verified: tsc 0 errors,
+  eslint 0 errors, `vitest --changed --maxWorkers=4` 252 files / 3295
+  tests green, `pnpm build` green.

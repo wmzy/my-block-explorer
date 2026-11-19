@@ -46,6 +46,7 @@ vi.mock('@/config/chains', () => ({
     chainId === 1 ? 'Ethereum' : chainId === 137 ? 'Polygon' : 'Unknown',
   getChainType: () => 'mainnet',
   getChainSymbol: (chainId: number) => (chainId === 137 ? 'POL' : 'ETH'),
+  getNativeDecimals: () => 18,
   isChainSupported: (chainId: number) => chainId === 1 || chainId === 137,
   POPULAR_CHAINS: [
     { id: 1, name: 'Ethereum' },

@@ -31,6 +31,7 @@ import {
   invalidLimitResponse,
   invalidOffsetResponse,
   invalidPageResponse,
+  readOptionalJsonBody,
   respondError,
 } from '../utils/api-error';
 import { createRateLimiter } from '../middleware/rate-limit';
@@ -446,12 +447,8 @@ app.post(
     const chainId = getValidatedChainId(c.req.param('chainId'));
     const address = getValidatedAddress(c.req.param('address'));
 
-    let body: unknown = {};
-    try {
-      body = await c.req.json();
-    } catch {
-      // Empty or non-JSON body → default bounds (earliest..latest).
-    }
+    const rawBody = await readOptionalJsonBody(c);
+    const body = rawBody === undefined ? {} : rawBody;
 
     const validated = validateScanJobBody(body);
     if (!validated.ok) {

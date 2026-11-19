@@ -1,30 +1,22 @@
 // Shared JSON GET leaf: the fetch → non-2xx reject → body-parse trio
 // every simple JSON endpoint client repeats (solc version list,
-// DefiLlama prices/charts, NFT metadata gateways). Import-free so both
-// sides (backend services, browser services) can take it — same home
-// rule as fetchWithTimeout one file over.
-//
-// The budget is the AbortController + setTimeout pair, deliberately NOT
-// AbortSignal.timeout: older jsdom test builds lack AbortSignal.timeout
-// entirely, and the builds that have it run it on a native timer
-// vitest fake timers cannot drive — the controller pair is the only
-// budget that stays real in every environment, keeps the abort the
-// platform's ordinary AbortError (mapped by whoever catches it), and
-// absorbs nftMetadata's historical per-site timeout exemption (which
-// feature-detected AbortSignal.timeout for older jsdom) into one
-// universal mechanism.
+// DefiLlama prices/charts, NFT metadata gateways). Importable by both
+// sides (backend services, browser services) — same home rule as
+// fetchWithTimeout one file over, which now also supplies the transport
+// budget. Its AbortController + setTimeout pair is deliberately NOT
+// AbortSignal.timeout (older jsdom lacks it; the builds that have it
+// run it on a native timer fake timers cannot drive) — see that file.
+// The budget covers the request through response headers per
+// fetchWithTimeout's contract; the tiny-body .json() read that follows
+// is uncovered by design, same as every fetchWithTimeout caller.
+import { fetchWithTimeout } from './fetchWithTimeout';
+
 export async function fetchJson(
   url: string,
   timeoutMs: number,
   init?: RequestInit,
 ): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.json();
-  } finally {
-    clearTimeout(timer);
-  }
+  const response = await fetchWithTimeout(url, init ?? {}, timeoutMs);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
 }

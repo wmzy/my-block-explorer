@@ -145,6 +145,7 @@ vi.mock('@/config/chains', () => ({
   },
   getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
   getChainSymbol: (chainId: number) => (chainId === 1 ? 'ETH' : 'UNKNOWN'),
+  getNativeDecimals: () => 18,
   isChainSupported: (chainId: number) => chainId === 1,
   getPreferredChainId: () => 1,
   readRememberedChainId: () => 1,

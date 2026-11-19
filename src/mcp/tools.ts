@@ -38,7 +38,7 @@ const read_only: ToolAnnotations = { readOnlyHint: true };
  * content is a string, so integers become decimal strings. The replacer
  * is the shared import-free leaf (utils/jsonReplacer) — mcp stays pino-free.
  */
-export function jsonText(value: unknown): string {
+function jsonText(value: unknown): string {
   return JSON.stringify(value, bigintJsonReplacer, 2) ?? 'null';
 }
 

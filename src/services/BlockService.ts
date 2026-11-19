@@ -113,7 +113,10 @@ const createBlockService = (deps: BlockServiceDeps) => {
   // landing as a local-format "Wed Oct 01 2025 21:20:23 GMT+0800 …" string
   // that DuckDB rejects outright ("Could not convert string … to INT64"),
   // so indexing any block threw. viem's block timestamp is already seconds.
-  const buildBlockValues = (chainId: number, chainBlock: Record<string, unknown>) => {
+  const buildBlockValues = (
+    chainId: number,
+    chainBlock: Record<string, unknown>,
+  ): typeof blocks.$inferInsert => {
     const blockTimestampSeconds =
       chainBlock.timestamp === null || chainBlock.timestamp === undefined
         ? null

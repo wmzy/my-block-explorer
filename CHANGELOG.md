@@ -9,6 +9,41 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-19 duplication review fix wave round 18 (4 read-only scouts +
+  Main-sequenced fixes)** — 10 findings adjudicated (8 fixed, 2 rejected on
+  re-verification); the surface stays converged (all four scopes reported
+  near-clean; no P0 real bugs). **Canonicals** — `getNativeDecimals` in
+  config/chains.ts (the `?.nativeCurrency.decimals ?? 18` lookup idiom had
+  9 hand-rolled sites across views + realTimeData); `readOptionalJsonBody`
+  in utils/api-error.ts (the lenient empty-body-is-valid `c.req.json()`
+  try/catch, 3 sites: events range-start ABI hint, address-scan default
+  bounds, watch no-label upsert — distinct from `readJsonBody`'s 400 path).
+  **fetchJson now delegates to fetchWithTimeout** (the byte-equal
+  AbortController+setTimeout copy is gone; utils/AGENTS.md's
+  "fetchWithTimeout + !ok-throw + .json()" description is finally true —
+  budget covers through response headers per fetchWithTimeout's contract).
+  **Type-drift traps closed** — `StorageLayoutResponse` (services/contracts)
+  is now `Omit<StorageLayoutResponse, 'error'>` off the shared types/storage
+  envelope (the 200 body never carries `error`; found:false is a 404), and
+  `buildBlockValues` carries the `typeof blocks.$inferInsert` return
+  annotation (round-17 rule; the comment claimed the typing but there was
+  none). **Dead exports de-exported** — `specJson` (routes/openapi),
+  `MAX_RESULT_ROWS`/`normalizeSqlCell` (routes/sql), `jsonText` (mcp/tools);
+  all importer-audited to zero external consumers. **Rejected on
+  re-verification** — "normalizeError is dead" was wrong (used internally ×2
+  by createRetryableRpcCall/logError); the ECONNRESET/ENOTFOUND/ETIMEDOUT
+  triple ×2 in errorHandler.ts stays (same-file pair, the round-14/15
+  no-payoff class). **Test-mock fallout pinned**: the getNativeDecimals
+  migration re-exposed the round-8 rule — factory mocks of `@/config/chains`
+  must model every export the view imports; 13 suites updated (6 failing +
+  7 latent). En-route incident: a fuzzy `edit` old_string with an assumed
+  (nonexistent) context tail silently rewrote `vi.mock('@/services/addressRealTime'`
+  into a duplicate prices mock in tokenPageNftItems.test.tsx — always build
+  edit anchors from the just-read verbatim lines, and audit multi-file test
+  edits with `git diff HEAD` (one intended line per file). All verified:
+  tsc 0, eslint 0 errors, `vitest --changed --maxWorkers=4` 252 files /
+  3295 tests green, `pnpm build` green.
+
 - **2026-11-18 duplication review fix wave round 17 (4 read-only scouts +
   Main-sequenced fixes)** — 16 findings adjudicated (9 fixed, 7
   skipped/documented); the residual surface keeps shrinking (services and

@@ -176,6 +176,16 @@ export function getChainSymbol(chainId: number): string {
   return chain?.nativeCurrency.symbol ?? 'ETH';
 }
 
+// Native-currency display decimals of a chain, 18 when unknown.
+// formatEther would hardcode 18 and silently misrender balances on
+// chains whose native unit uses other decimals (e.g. Nautilus ZBC's 9).
+// The one home for the chainId → decimals lookup idiom; a site already
+// holding the Chain object for other purposes may keep the inline
+// `?.nativeCurrency.decimals ?? 18` fallback.
+export function getNativeDecimals(chainId: number): number {
+  return getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
+}
+
 // Get the default RPC URL
 export function getDefaultRpcUrl(chainId: number): string {
   const chain = getChainInfo(chainId);

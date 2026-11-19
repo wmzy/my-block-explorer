@@ -10,7 +10,7 @@ import {
   lazyHeaderMetaStyle,
   lazyHeaderTitleRowStyle,
 } from '@/components/ui/LazyCollapsibleHeader';
-import { getChainInfo, getChainSymbol } from '@/config/chains';
+import { getChainSymbol, getNativeDecimals } from '@/config/chains';
 import { fetchCallTraceTree } from '@/utils/callTraceRpc';
 import { formatNumber, formatPercentage, formatValue } from '@/utils/format';
 import { useLazyExpand } from '@/util/useLazyExpand';
@@ -104,7 +104,7 @@ function TraceNodeRow({
   const showSelector = node.selector !== null && !CREATE_FAMILY.has(node.type);
   const gasShare =
     node.gasUsed !== null && txGasUsed !== null ? gasShareLabel(node.gasUsed, txGasUsed) : '';
-  const nativeDecimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
+  const nativeDecimals = getNativeDecimals(chainId);
 
   return (
     <div className={traceNodeStyle}>

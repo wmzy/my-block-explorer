@@ -26,6 +26,7 @@ import {
   WATCH_EVENTS_MAX_LIMIT,
 } from '../services/WatchService';
 import { LABEL_MAX_LENGTH } from '../utils/labelContract';
+import { readOptionalJsonBody } from '../utils/api-error';
 
 const logger = createLogger('watch-routes');
 
@@ -164,12 +165,8 @@ app.put(
     const parsed = parseChainAndAddressRequest(c.req.param('chainId'), c.req.param('address'));
     if ('error' in parsed) return c.json(parsed, 400);
 
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      body = undefined; // an empty body is a valid "no label" upsert
-    }
+    // An empty body is a valid "no label" upsert.
+    const body = await readOptionalJsonBody(c);
     const parsedBody = parseWatchBody(body);
     if ('error' in parsedBody) return c.json(parsedBody, 400);
 

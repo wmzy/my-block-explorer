@@ -58,6 +58,7 @@ vi.mock('@/config/chains', () => ({
   getChainName: (chainId: number) =>
     chainId === 1 ? 'Ethereum' : chainId === 137 ? 'Polygon' : `Chain ${chainId}`,
   getChainSymbol: () => 'ETH',
+  getNativeDecimals: () => 18,
   // Consumed by the Landing helpers behind UnsupportedChainState.
   isChainSupported: (chainId: number) => chainId === 1,
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],

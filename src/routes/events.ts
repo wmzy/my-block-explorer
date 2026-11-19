@@ -40,7 +40,7 @@ import {
 import { safeJsonResponse } from '../utils/serialization';
 import { csvAttachmentHeaders } from '../utils/csv';
 import { errorMessage } from '../utils/errorHandler';
-import { createApiError, invalidPageResponse, readJsonBody, respondError } from '../utils/api-error';
+import { createApiError, invalidPageResponse, readJsonBody, readOptionalJsonBody, respondError } from '../utils/api-error';
 import { contractSourceService } from '../services/ContractSourceService';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import type { BlockTagInput } from '@/types/events';
@@ -882,13 +882,8 @@ const startOrResumeIndexing = async (c: Context, kind: keyof typeof START_RESUME
   const { chainId, address, rangeId } = params;
 
   try {
-    let bodyAbi: unknown;
-    try {
-      const body = await c.req.json();
-      bodyAbi = body.abi;
-    } catch {
-      // no body or invalid JSON
-    }
+    const body = (await readOptionalJsonBody(c)) as { abi?: unknown } | undefined;
+    const bodyAbi = body?.abi;
 
     const abi = await resolveIndexingAbi(bodyAbi, chainId, address);
 

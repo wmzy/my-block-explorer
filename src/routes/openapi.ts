@@ -2532,5 +2532,4 @@ app.get('/openapi.json', c => {
   return c.body(specJson);
 });
 
-export { specJson };
 export default app;

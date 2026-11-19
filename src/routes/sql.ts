@@ -121,7 +121,7 @@ export function isReadOnlyQuery(query: string): boolean {
 
 // Cap + truncation semantics: one row past the cap is read on purpose —
 // `truncated` then reports a fact about the result set, not a guess.
-export const MAX_RESULT_ROWS = 500;
+const MAX_RESULT_ROWS = 500;
 
 // JSON-safe cell value: what the API returns after normalization.
 export type SqlJsonValue =
@@ -141,7 +141,7 @@ const bytesToHex = (bytes: Uint8Array): string => {
  * would silently null them, which reads as SQL NULL and lies.
  * Pure: no DB, no env.
  */
-export function normalizeSqlCell(value: unknown): SqlJsonValue {
+function normalizeSqlCell(value: unknown): SqlJsonValue {
   if (value === null || value === undefined) return null;
   if (typeof value === 'boolean' || typeof value === 'string') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);

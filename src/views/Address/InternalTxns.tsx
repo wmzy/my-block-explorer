@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@linaria/core';
 import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
 import { Alert } from 'haze-ui';
-import { getChainInfo, getChainSymbol } from '@/config/chains';
+import { getChainSymbol, getNativeDecimals } from '@/config/chains';
 import { cellText, formatHash, formatNumber, formatValue } from '@/utils/format';
 import {
   aggregateInternalTxns,
@@ -372,7 +372,7 @@ export default function InternalTxns({
                       : formatValue(
                           BigInt(record.value),
                           getChainSymbol(chainId),
-                          getChainInfo(chainId)?.nativeCurrency.decimals ?? 18,
+                          getNativeDecimals(chainId),
                         )}
                   </td>
                   <td>
@@ -494,7 +494,7 @@ export default function InternalTxns({
                             ? formatValue(
                                 row.value,
                                 getChainSymbol(chainId),
-                                getChainInfo(chainId)?.nativeCurrency.decimals ?? 18,
+                                getNativeDecimals(chainId),
                               )
                             : '—'}
                         </td>

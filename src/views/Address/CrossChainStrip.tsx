@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
-import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { getChainName, getChainSymbol, getNativeDecimals } from '@/config/chains';
 import {
   fetchUsdPrices,
   nativePriceId,
@@ -241,7 +241,7 @@ export function CrossChainStrip({ chainId, address }: { chainId: number; address
       if (snapshot === undefined) return null;
       return tokenAmountToUsd(
         outcome.balance,
-        getChainInfo(probedChainId)?.nativeCurrency.decimals ?? 18,
+        getNativeDecimals(probedChainId),
         snapshot,
       );
     });
@@ -355,7 +355,7 @@ function ProbeChip({
 
   // The chain's OWN native units — never a hardcoded 18 (repo-verified
   // pitfall on non-18 chains).
-  const decimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
+  const decimals = getNativeDecimals(chainId);
   const symbol = getChainSymbol(chainId);
   const usd = snapshot !== undefined ? tokenAmountToUsd(outcome.balance, decimals, snapshot) : null;
 

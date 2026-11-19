@@ -44,7 +44,7 @@ import {
   traceOneTxOutcome,
   TRUNCATED_LIST_NOTE,
 } from '@/components/internalTxnsShared';
-import { getChainInfo, getChainSymbol } from '@/config/chains';
+import { getChainSymbol, getNativeDecimals } from '@/config/chains';
 import { useLazyExpand } from '@/util/useLazyExpand';
 import { rpcRequest } from '@/utils/callTraceRpc';
 import { cellText, formatHash, formatNumber, formatValue } from '@/utils/format';
@@ -259,7 +259,7 @@ export function InternalTxnsSection({
   };
 
   const symbol = getChainSymbol(chainId);
-  const nativeDecimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
+  const nativeDecimals = getNativeDecimals(chainId);
   // Settled summary in the header (frame count across traced txs) so the
   // collapsed card still tells the reader what the sweep holds.
   const headerMeta =
