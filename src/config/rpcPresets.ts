@@ -6,7 +6,9 @@ export type RpcPreset = {
   provider: string;
 };
 
-export const RPC_PRESETS: Record<number, RpcPreset[]> = {
+// Module-private on purpose: getRpcPresets is the only public accessor
+// (the export had zero external importers, src or tests).
+const RPC_PRESETS: Record<number, RpcPreset[]> = {
   // Ethereum Mainnet
   1: [
     {

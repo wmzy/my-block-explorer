@@ -2831,3 +2831,36 @@ pnpm typecheck           # tsc --noEmit
   readContract families. Verified: tsc 0, eslint 0 errors, `vitest
   --changed --maxWorkers=4` 220 files / 2951 tests green, 4 MCP suites
   by name, `pnpm build` green, throwaway-DB curl smoke.
+
+- **2026-11-21 duplication review fix wave round 21 (4 read-only scouts +
+  Main-sequenced fixes)** — 5 findings adjudicated (4 fixed, 1 no-payoff
+  skip); the leanest scope distribution yet: services+routes reported
+  CLEAN (0 findings across all 8 audit classes), views/leaves/infra
+  found 1–2 P2s each. **MCP honesty fix** — `get_indexing_status`'s
+  both-sections-failed path always threw `McpBackendUnreachableError`
+  ("start it with npx…") even when the backend ANSWERED with real API
+  errors (500 `internal_error` + 503 `indexing_status_unavailable`);
+  `softGet` now keeps the original error OBJECT (not just its flattened
+  message), and the both-failed path classifies: any `McpApiError` among
+  the two → throw an `McpApiError` carrying both sections' messages;
+  only all-unreachable keeps the npx advice. Regression-pinned both ways
+  (reachable-but-erroring must NOT contain "unreachable"; backend-less
+  must keep "npx my-block-explorer"). **Regex twin closed** — round 14
+  unified the chartStats/gasHistory copies of the unsupported-method
+  regex into `errorHandler` but MISSED `traceFormat`'s byte-equal
+  `TRACE_UNSUPPORTED_PATTERN`; `METHOD_UNSUPPORTED_PATTERN` is now
+  exported from errorHandler (zero-import leaf, no cycle — traceFormat
+  already has txDecode/strictInteger imports) and traceFormat keeps only
+  its own `-32601` code arm. **Falsy-zero nit** — Blocks/Detail
+  `formatBytes` used `!bytes` (a 0-byte block rendered "N/A"; now
+  `bytes === undefined` → honest "0 bytes", matching the file's own
+  parseBlockQuantity contract). **De-exported** `RPC_PRESETS`
+  (config/rpcPresets — zero importers anywhere; `getRpcPresets` is the
+  API). **Skipped**: the one-line `searchSchema` const twin in
+  Signatures/Tokens (scout itself recommended against extraction —
+  round-8/12 one-liner precedent). Main's parallel sweeps (as-any,
+  ts-ignore, eslint-disable, empty-catch, parseInt drift, naive
+  new Date, toLocaleString) all came back clean at HEAD. Verified: tsc
+  0 errors, eslint 0 errors on touched files, mcpServer 22/22 (new
+  tests included), `vitest --changed --maxWorkers=4` green, `pnpm
+  build` green.

@@ -40,7 +40,9 @@ import { computeBlockNav } from './nav';
 import InternalTxnsSection from './InternalTxnsSection';
 
 const formatBytes = (bytes?: number): string => {
-  if (!bytes) return 'N/A';
+  // `=== undefined` (not truthiness) keeps the file's absent-vs-zero
+  // honesty contract: a 0-byte block renders "0 bytes", not "N/A".
+  if (bytes === undefined) return 'N/A';
   return `${formatNumber(bytes)} bytes`;
 };
 

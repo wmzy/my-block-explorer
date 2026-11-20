@@ -483,6 +483,41 @@ describe('MCP server over the real protocol path', () => {
     expect(text).toContain('indexing_status_unavailable');
   });
 
+  it('get_indexing_status reports API errors (not unreachable advice) when both sections fail on a reachable backend', async () => {
+    stubFetch(url =>
+      url.includes('/ranges')
+        ? { status: 500, body: { error: 'internal_error', message: 'ranges failed' } }
+        : url.includes('/statistics')
+          ? { status: 503, body: { error: 'indexing_status_unavailable', message: 'status failed' } }
+          : null,
+    );
+    const handle = await connect(stubRpc());
+    restoreClose = handle.close;
+    const result = await handle.client.callTool({
+      name: 'get_indexing_status',
+      arguments: { chainId: 137, address: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
+    });
+    expect(result.isError).toBe(true);
+    const text = textOf(result);
+    // Both sections' API failures surface; the backend answered, so the
+    // "start it with npx" advice must NOT appear (honesty contract).
+    expect(text).toContain('ranges failed');
+    expect(text).toContain('status failed');
+    expect(text).not.toContain('unreachable');
+  });
+
+  it('get_indexing_status stays unreachable-flavored when no backend answers', async () => {
+    stubFetch(() => null);
+    const handle = await connect(stubRpc());
+    restoreClose = handle.close;
+    const result = await handle.client.callTool({
+      name: 'get_indexing_status',
+      arguments: { chainId: 137, address: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' },
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('npx my-block-explorer');
+  });
+
   it('list_chains works backend-less and flags the gap', async () => {
     stubFetch(() => null);
     const handle = await connect(stubRpc());

@@ -23,6 +23,10 @@ import { selectorOf } from './txDecode';
 // The bigint-exact quantity reader's one home: this import-free leaf
 // (txpool shares the same copy).
 import { parseQuantity } from './strictInteger';
+// The shared "endpoint doesn't implement this method" text pattern —
+// one contract, one literal (errorHandler owns it; this leaf adds only
+// the -32601 JSON-RPC code check below).
+import { METHOD_UNSUPPORTED_PATTERN } from './errorHandler';
 
 /** What the narrow cast promises: EIP-1193 request args in, unknown JSON out. */
 export type UntypedRpcRequestArgs = { method: string; params: unknown[] };
@@ -150,20 +154,16 @@ export const errorChainText = (error: unknown): string => {
   return parts.join('\n');
 };
 
-// Same shape as the gas-history classifier: "method not found" and its
-// provider phrasings. Bare "not found" is deliberately excluded — a
-// missing transaction is a different (retryable) failure, not evidence
-// that tracing is unsupported.
-const TRACE_UNSUPPORTED_PATTERN =
-  /(method[^\n]*not[^\n]*(found|exist|available|support))|not[^\n]*supported|does not exist|unimplemented/i;
-
 /**
  * Did the debug_traceTransaction request fail because the endpoint does
  * not implement it? Drives the honest "not supported by this RPC" info
- * state instead of a fetch-error card.
+ * state instead of a fetch-error card. Uses the shared errorHandler
+ * pattern; bare "not found" is deliberately excluded by it — a missing
+ * transaction is a different (retryable) failure, not evidence that
+ * tracing is unsupported.
  */
 export function isTraceUnsupportedError(error: unknown): boolean {
   // Bare string rejections (no Error wrapper) still classify by text.
   const text = typeof error === 'string' ? error : errorChainText(error);
-  return TRACE_UNSUPPORTED_PATTERN.test(text) || text.includes('-32601');
+  return METHOD_UNSUPPORTED_PATTERN.test(text) || text.includes('-32601');
 }

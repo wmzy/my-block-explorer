@@ -436,27 +436,42 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       type StatsRow = { totalEvents?: number; uniqueEventTypes?: number };
       // Both open reads; each degrades independently (unreachable AND API
       // errors — e.g. statistics' 503 indexing_status_unavailable — carry an
-      // honest per-section reason instead of failing the whole tool).
-      const softGet = async <T>(path: string): Promise<{ data: T | null; error: string | null }> => {
+      // honest per-section reason instead of failing the whole tool). The
+      // original error OBJECT is kept so the both-failed path below can
+      // tell "backend answered with API errors" from "no backend at all".
+      const softGet = async <T>(path: string): Promise<{ data: T | null; error: unknown }> => {
         try {
           return { data: await api.get<T>(path), error: null };
         } catch (error) {
-          return { data: null, error: errorMessage(error) };
+          return { data: null, error };
         }
       };
       const ranges = await softGet<RangesRow>(`/api/chains/${chainId}/contracts/${address}/events/ranges`);
       const stats = await softGet<StatsRow>(`/api/chains/${chainId}/contracts/${address}/events/statistics`);
       if (ranges.data === null && stats.data === null) {
-        // Nothing served at all — surface the (unreachable-flavored) error.
-        throw new McpBackendUnreachableError(api.base, new Error(ranges.error ?? stats.error ?? 'unreachable'));
+        // Nothing served at all. Any McpApiError among the two means the
+        // backend DID answer — surface the API failures verbatim, never
+        // the "start it with npx" advice (that would mislabel a reachable,
+        // erroring backend as down).
+        const apiError = [ranges.error, stats.error].find(
+          (error): error is McpApiError => error instanceof McpApiError,
+        );
+        if (apiError) {
+          throw new McpApiError(
+            apiError.status,
+            apiError.code,
+            `Indexing status unavailable — ranges: ${errorMessage(ranges.error)}; statistics: ${errorMessage(stats.error)}`,
+          );
+        }
+        throw new McpBackendUnreachableError(api.base, ranges.error ?? stats.error);
       }
       return ok({
         chainId,
         address,
         ranges: ranges.data?.ranges ?? null,
-        rangesError: ranges.error,
+        rangesError: ranges.error === null ? null : errorMessage(ranges.error),
         statistics: stats.data ?? null,
-        statisticsError: stats.error,
+        statisticsError: stats.error === null ? null : errorMessage(stats.error),
       });
     },
   );

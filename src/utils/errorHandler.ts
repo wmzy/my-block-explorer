@@ -50,11 +50,12 @@ export function flattenErrorMessage(error: unknown): string {
 
 /**
  * Provider "your node doesn't have this method" texts, matched against
- * already-flattened text. The one home for the chart/gas classifiers'
- * identical regex (providers word this a dozen ways and viem wraps the
+ * already-flattened text. The one home for this pattern — the chart/gas
+ * classifiers here and the trace/txpool classifier (traceFormat) share
+ * the same literal (providers word this a dozen ways and viem wraps the
  * JSON-RPC error several layers deep, so always flatten first).
  */
-const METHOD_UNSUPPORTED_PATTERN =
+export const METHOD_UNSUPPORTED_PATTERN =
   /(method[^\n]*not[^\n]*(found|exist|available|support))|not[^\n]*supported|does not exist|unimplemented/i;
 
 export function isMethodUnsupportedText(text: string): boolean {
