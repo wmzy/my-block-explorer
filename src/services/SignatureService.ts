@@ -15,7 +15,7 @@
 // Multiple candidates keep openchain's order (most popular first).
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, signatureCache } from '../database/init';
-import { negativeEntryFresh } from '../utils/negativeCache';
+import { negativeEntryFresh, NOT_FOUND_CACHE_TTL_HOURS } from '../utils/negativeCache';
 // Canonical record-shape guard (rejects arrays) + the shared fetch budget
 // wrapper — both import-free leaves.
 import { isRecord } from '../utils/isRecord';
@@ -27,10 +27,9 @@ const logger = createLogger('signature-service');
 const OPENCHAIN_LOOKUP_URL = 'https://api.openchain.xyz/signature-database/v1/lookup';
 const FETCH_TIMEOUT_MS = 5_000;
 
-// Negative entries expire after 24h: a selector unknown to openchain today
-// can gain a signature as the database grows, and 24h is long enough that a
-// hot unknown selector costs at most one upstream round trip per day.
-export const NOT_FOUND_CACHE_TTL_HOURS = 24;
+// Negative-entry TTL: NOT_FOUND_CACHE_TTL_HOURS (utils/negativeCache) —
+// shared with the storage-layout NOT_FOUND tier so the two negative
+// caches can never drift apart.
 
 export type SignatureKind = 'function' | 'event';
 

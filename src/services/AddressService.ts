@@ -9,6 +9,7 @@ import { errorMessage } from '../utils/errorHandler';
 import { createTtlLruCache } from '../utils/ttlLruCache';
 import { codeVerdict } from '../utils/address';
 import { withTimeout } from '../utils/withTimeout';
+import { MAX_WINDOW_BLOCKS } from '../utils/scanLadder';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('address-service');
@@ -253,9 +254,11 @@ const DISCOVERY_LIMIT = 200;
 const DISCOVERY_LOOKAHEAD = 15;
 const discoveryBudgetFor = (offset: number, limit: number): number =>
   Math.min(offset + limit + DISCOVERY_LOOKAHEAD, DISCOVERY_LIMIT);
-// Hard clamp for an explicit search-window override (?window=). The
-// txCount-tiered defaults in getSearchRange stay far below it.
-const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
+// Hard clamp for an explicit search-window override (?window=), the
+// scanLadder MAX_WINDOW_BLOCKS canonical the route reader and the
+// transfer/approval scans share. The txCount-tiered defaults in
+// getSearchRange stay far below it.
+//
 // Deterministic pagination: each request used to re-run the capped search
 // (per-block failures silently swallowed), so consecutive pages could
 // disagree. A short-lived canonical result per (chain, address, window)
@@ -273,7 +276,7 @@ const getSearchRange = (txCount: number): bigint => {
 // widens it explicitly (?window=). Explicit values clamp to 1..MAX.
 const resolveSearchWindow = (txCount: number, requested?: number): bigint => {
   if (requested === undefined) return getSearchRange(txCount);
-  const clamped = Math.min(Math.max(Math.trunc(requested), 1), MAX_SEARCH_WINDOW_BLOCKS);
+  const clamped = Math.min(Math.max(Math.trunc(requested), 1), MAX_WINDOW_BLOCKS);
   return BigInt(clamped);
 };
 
@@ -699,7 +702,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
       // undefined so the txCount-tiered default range applies.
       let requestedWindow: number | undefined;
       if (windowBlocks !== undefined) {
-        requestedWindow = Math.min(Math.max(Math.trunc(windowBlocks), 1), MAX_SEARCH_WINDOW_BLOCKS);
+        requestedWindow = Math.min(Math.max(Math.trunc(windowBlocks), 1), MAX_WINDOW_BLOCKS);
       }
       // Distinct windows are distinct searches; the txCount-tiered default
       // gets its own key so an explicit window never aliases it.

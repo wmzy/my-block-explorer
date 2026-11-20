@@ -20,9 +20,16 @@ export function ageHours(date: Date | null | undefined): number {
 
 /**
  * Whether a negative-cache row recorded at `fetchedAt` is still inside
- * its TTL window. TTL tier values stay at each call site — this is only
- * the freshness math.
+ * its TTL window. Bespoke TTL tiers stay at each call site; the shared
+ * NOT_FOUND tier (both signature and storage-layout caches) is
+ * NOT_FOUND_CACHE_TTL_HOURS below.
  */
 export function negativeEntryFresh(fetchedAt: Date | null | undefined, ttlHours: number): boolean {
   return ageHours(fetchedAt) < ttlHours;
 }
+
+// The NOT_FOUND tier shared by the signature and storage-layout caches:
+// a miss recorded today can become a hit as the upstream database (or
+// the bytecode inference tool) grows, and 24h caps a hot unknown at one
+// upstream round trip per day.
+export const NOT_FOUND_CACHE_TTL_HOURS = 24;

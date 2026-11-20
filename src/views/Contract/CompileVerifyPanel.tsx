@@ -12,7 +12,15 @@ import * as ff from 'fetch-fun';
 import { get, post, longRunningApi } from '@/util/http';
 import { errorMessage } from '@/utils/errorHandler';
 import { describeSubmitError, type PanelResult } from './verifyShared';
-import { noticeBoxError, noticeBoxOk, noticeBoxWarn, primaryActionButton } from './styles';
+import {
+  noticeBoxError,
+  noticeBoxOk,
+  noticeBoxWarn,
+  primaryActionButton,
+  verifyActionsRow,
+  verifyFeedbackDanger,
+  verifySubmitLayout,
+} from './styles';
 
 // The compilers endpoint's entry shape (see CompileVerifyService).
 type CompilerVersionEntry = {
@@ -119,28 +127,6 @@ const hintStyles = css`
   margin: 6px 0 0 0;
   font-size: 12px;
   color: var(--haze-color-warning);
-`;
-
-const feedbackBadStyles = css`
-  margin: 6px 0 0 0;
-  font-size: 12px;
-  color: var(--haze-color-danger);
-`;
-
-const actionsRowStyles = css`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  flex-wrap: wrap;
-`;
-
-// Layout half of the submit button; colors/hover/disabled come from the
-// shared primaryActionButton family in ./styles.
-const submitStyles = css`
-  padding: 8px 18px;
-  font-size: 14px;
-  border-radius: 6px;
 `;
 
 const resultVerifiedStyles = css`
@@ -398,7 +384,7 @@ export function CompileVerifyPanel({
         }}
       />
       {jsonFeedback !== null && !jsonFeedback.ok && (
-        <p className={feedbackBadStyles}>{jsonFeedback.reason}</p>
+        <p className={verifyFeedbackDanger}>{jsonFeedback.reason}</p>
       )}
       {jsonFeedback?.ok === true && jsonFeedback.buildInfo && (
         <p className={hintStyles}>
@@ -416,10 +402,10 @@ export function CompileVerifyPanel({
         placeholder="e.g. Storage or contracts/Storage.sol:Storage — required when the input compiles to several contracts"
         onChange={e => setContractNameText(e.target.value)}
       />
-      <div className={actionsRowStyles}>
+      <div className={verifyActionsRow}>
         <button
           type="button"
-          className={cx(primaryActionButton, submitStyles)}
+          className={cx(primaryActionButton, verifySubmitLayout)}
           disabled={!canSubmit}
           onClick={() => void handleSubmit()}
         >

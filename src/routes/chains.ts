@@ -271,43 +271,49 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
 // is registered under the id, 204 on success. The RPC manager reload
 // re-reads the table and drops both the client and the registry entry
 // (removeCustomChain below is the belt to its braces: a failed reload
-// must not leave a stale registration behind).
-app.delete('/chains/custom/:chainId', requireAdminTokenIfConfigured, async c => {
-  try {
-    const param = c.req.param('chainId');
-    // Strict decimal parse: parseInt() accepted a valid prefix, so
-    // `:chainId = 31337abc` was read as 31337 and could delete the wrong
-    // custom chain registration.
-    const chainId = parseStrictInteger(param);
-    if (chainId === null || chainId <= 0) {
-      return respondError(c, 400, 'invalid_chain_id', 'chainId must be a positive integer');
+// must not leave a stale registration behind). Same bucket as the
+// register POST — the reload is the same cost.
+app.delete(
+  '/chains/custom/:chainId',
+  requireAdminTokenIfConfigured,
+  registerRateLimiter,
+  async c => {
+    try {
+      const param = c.req.param('chainId');
+      // Strict decimal parse: parseInt() accepted a valid prefix, so
+      // `:chainId = 31337abc` was read as 31337 and could delete the wrong
+      // custom chain registration.
+      const chainId = parseStrictInteger(param);
+      if (chainId === null || chainId <= 0) {
+        return respondError(c, 400, 'invalid_chain_id', 'chainId must be a positive integer');
+      }
+
+      const existing = await db
+        .select({ chainId: customChains.chainId })
+        .from(customChains)
+        .where(eq(customChains.chainId, chainId));
+
+      if (existing.length === 0) {
+        return respondError(
+          c,
+          404,
+          'not_found',
+          `No custom chain is registered for chain ID ${chainId}`,
+        );
+      }
+
+      await db.delete(customChains).where(eq(customChains.chainId, chainId));
+
+      removeCustomChain(chainId);
+      await rpcManager.reloadConfigs();
+
+      return c.body(null, 204);
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to delete custom chain');
+      return respondError(c, 500, 'internal_error', 'Failed to delete custom chain');
     }
-
-    const existing = await db
-      .select({ chainId: customChains.chainId })
-      .from(customChains)
-      .where(eq(customChains.chainId, chainId));
-
-    if (existing.length === 0) {
-      return respondError(
-        c,
-        404,
-        'not_found',
-        `No custom chain is registered for chain ID ${chainId}`,
-      );
-    }
-
-    await db.delete(customChains).where(eq(customChains.chainId, chainId));
-
-    removeCustomChain(chainId);
-    await rpcManager.reloadConfigs();
-
-    return c.body(null, 204);
-  } catch (error) {
-    logger.error({ err: error }, 'Failed to delete custom chain');
-    return respondError(c, 500, 'internal_error', 'Failed to delete custom chain');
-  }
-});
+  },
+);
 
 // Clear a chain's cached-immutable data (dev-chain reset recovery —
 // anvil/hardhat keeps the chain id but rewinds the head, so the cached

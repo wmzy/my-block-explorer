@@ -120,6 +120,27 @@ export function useLatestBlocksFeed(chainId: number) {
   return feed;
 }
 
+// Live head + staleness gap for the list views' "N new blocks" notice
+// (Blocks and Transactions lists): the same polled feed Home uses keeps
+// reporting the chain head while the page holds its anchor — the frozen
+// walk anchor (Blocks) or the displayed page's head snapshot
+// (Transactions). Strictly greater: a head at or below the anchor is not
+// stale news and renders nothing (null). The feed guards non-positive
+// chain ids without an RPC call, so the unsupported-chain branch
+// (chainId 0) stays offline.
+export function useLiveHeadGap(
+  chainId: number,
+  anchorHead: bigint | null,
+): { liveHead: bigint | null; newBlockCount: bigint | null } {
+  const feed = useLatestBlocksFeed(chainId);
+  const liveHead = feed.data?.latestBlockNumber ?? null;
+  const newBlockCount =
+    anchorHead !== null && liveHead !== null && liveHead > anchorHead
+      ? liveHead - anchorHead
+      : null;
+  return { liveHead, newBlockCount };
+}
+
 export function useLatestTransactionsFeed(chainId: number) {
   const feed = useLatestTransactionsFeedQuery([chainId]);
   useRefetchOnVisible(feed.refetch);

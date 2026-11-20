@@ -11,7 +11,14 @@ import { css, cx } from '@linaria/core';
 import { post } from '@/util/http';
 import { formatFileSize } from '@/utils/format';
 import { describeSubmitError, type PanelResult } from './verifyShared';
-import { noticeBoxError, noticeBoxOk, noticeBoxWarn, primaryActionButton } from './styles';
+import {
+  noticeBoxError,
+  noticeBoxOk,
+  noticeBoxWarn,
+  primaryActionButton,
+  verifyActionsRow,
+  verifySubmitLayout,
+} from './styles';
 
 // Mirrors the backend's bundle caps (ContractVerifyService) so the page
 // refuses locally instead of round-tripping a doomed 400.
@@ -99,22 +106,6 @@ const hintStyles = css`
   margin: 8px 0 0 0;
   font-size: 13px;
   color: var(--haze-color-warning);
-`;
-
-const actionsRowStyles = css`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  flex-wrap: wrap;
-`;
-
-// Layout half of the submit button; colors/hover/disabled come from the
-// shared primaryActionButton family in ./styles.
-const submitStyles = css`
-  padding: 8px 18px;
-  font-size: 14px;
-  border-radius: 6px;
 `;
 
 const resultVerifiedStyles = css`
@@ -277,10 +268,10 @@ export function SourcifyVerifyPanel({
           Selected files total {formatFileSize(totalBytes)} — the limit is 2 MB.
         </p>
       )}
-      <div className={actionsRowStyles}>
+      <div className={verifyActionsRow}>
         <button
           type="button"
-          className={cx(primaryActionButton, submitStyles)}
+          className={cx(primaryActionButton, verifySubmitLayout)}
           disabled={!canSubmit}
           onClick={() => void handleSubmit()}
         >

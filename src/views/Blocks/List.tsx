@@ -17,7 +17,7 @@ import { parseChainIdParam } from '@/utils/chainParam';
 import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestBlocks } from '@/services/chainRpc';
-import { useLatestBlocksFeed } from '@/services/homeFeed';
+import { useLiveHeadGap } from '@/services/homeFeed';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { describeBlockProducer } from '@/utils/blockRpcData';
 import { cellText, formatNumber, formatRelativeTime } from '@/utils/format';
@@ -142,27 +142,21 @@ export default function BlocksList() {
   const { data, loading, error, refetch } = query;
   const blocks = data?.blocks ?? [];
 
-  // Live head for the staleness hint: the same polled feed the Home view
-  // uses (12s cadence plus a catch-up fetch on visibility regain) keeps
-  // reporting the chain head while the walk above stays anchored. The feed
-  // guards non-positive chain ids without an RPC call, so the unsupported-
-  // chain branch below passes 0 and stays offline.
-  const liveHeadFeed = useLatestBlocksFeed(chainInfo ? currentChainId : 0);
-  const liveHead = liveHeadFeed.data?.latestBlockNumber ?? null;
+  // Live head for the staleness hint (useLiveHeadGap in services/
+  // homeFeed): the same polled feed the Home view uses keeps reporting
+  // the chain head while the walk above stays anchored. Strictly
+  // greater: a head at or below the anchor is not stale news and renders
+  // nothing.
+  const { newBlockCount } = useLiveHeadGap(
+    chainInfo ? currentChainId : 0,
+    anchored !== null ? anchored.head : null,
+  );
 
   // Finality heads behind the per-row badges: the polled safe/finalized
   // heads. Unknown heads (unsupported tags, failed fetch, still loading)
   // render no badge at all — absence of data is not "pending". Guarded to 0
   // on the unsupported-chain branch like the feed above.
   const finalityHeads = useFinalityHeads(chainInfo ? currentChainId : 0).data;
-
-  // Blocks mined beyond the frozen anchor since the walk started (or since
-  // the last Refresh). Strictly greater: a head at or below the anchor is
-  // not stale news and renders nothing.
-  const newBlockCount =
-    anchored !== null && liveHead !== null && liveHead > anchored.head
-      ? liveHead - anchored.head
-      : null;
 
   // The frame's head for the pagination label: the frozen anchor once set
   // (it bounds the walk), else the live head.

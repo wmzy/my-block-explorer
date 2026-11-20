@@ -73,9 +73,21 @@ const mockUseLatestBlocks = vi.fn<(...args: unknown[]) => Record<string, unknown
 vi.mock('@/services/chainRpc', () => ({
   useLatestBlocks: (...args: unknown[]) => mockUseLatestBlocks(...args),
 }));
-const mockUseLatestBlocksFeed = vi.fn<(...args: unknown[]) => Record<string, unknown>>();
+type FeedHookResult = { data?: { latestBlockNumber?: bigint } };
+const mockUseLatestBlocksFeed = vi.fn<(...args: unknown[]) => FeedHookResult>();
 vi.mock('@/services/homeFeed', () => ({
   useLatestBlocksFeed: (...args: unknown[]) => mockUseLatestBlocksFeed(...args),
+  // The composed staleness hook: same feed fixture, the real derivation
+  // (strictly-greater gap), so feed changes flow into the notice.
+  useLiveHeadGap: (chainId: number, anchorHead: bigint | null) => {
+    const feed = mockUseLatestBlocksFeed(chainId);
+    const liveHead = feed.data?.latestBlockNumber ?? null;
+    const newBlockCount =
+      anchorHead !== null && liveHead !== null && liveHead > anchorHead
+        ? liveHead - anchorHead
+        : null;
+    return { liveHead, newBlockCount };
+  },
 }));
 const mockUseFinalityHeads = vi.fn<(...args: unknown[]) => Record<string, unknown>>();
 vi.mock('@/services/blocks', async importOriginal => {

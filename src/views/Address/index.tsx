@@ -7,6 +7,10 @@ import type { ContractFunctionParameters } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
+// Hard ceiling of the address-tx search window (blocks) — the scanLadder
+// MAX_WINDOW_BLOCKS canonical the backend clamp uses, imported so the
+// "Search deeper" cap can never drift from it.
+import { MAX_WINDOW_BLOCKS } from '@/utils/scanLadder';
 import TopNavigation from '@/components/TopNavigation';
 import TokenTransfers, {
   TRANSFER_LIMIT,
@@ -497,10 +501,6 @@ type AddressTxPage = {
 // getValidatedAddress). The ADDRESS STRING is the ground truth: the page
 // branches on it directly, never on a server error message, so an invalid
 // address shows one guidance card no matter which queries reject first.
-
-// Hard ceiling of the address-tx search window (blocks) — matches the
-// backend clamp. "Search deeper" disables at this budget.
-const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
 
 // The page's URL-driven state (?page= / ?window= / ?ttPage=) lives in the
 // shared schema module (./search) so the transfers tab writes through the
@@ -1817,11 +1817,11 @@ export default function Address() {
   // searchWindowBlocks) jumps straight to the cap — the only step that
   // guarantees progress when the current range cannot be read.
   const searchWindowAtCap =
-    txSearchWindowBlocks !== undefined && txSearchWindowBlocks >= MAX_SEARCH_WINDOW_BLOCKS;
+    txSearchWindowBlocks !== undefined && txSearchWindowBlocks >= MAX_WINDOW_BLOCKS;
   const nextSearchWindow =
     txSearchWindowBlocks !== undefined
-      ? Math.min(txSearchWindowBlocks * 4, MAX_SEARCH_WINDOW_BLOCKS)
-      : MAX_SEARCH_WINDOW_BLOCKS;
+      ? Math.min(txSearchWindowBlocks * 4, MAX_WINDOW_BLOCKS)
+      : MAX_WINDOW_BLOCKS;
 
   // Totals honesty: `total` is what heuristic discovery actually found —
   // a floor, not a full-indexer count. Only authoritative 'complete'

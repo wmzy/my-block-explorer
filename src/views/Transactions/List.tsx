@@ -26,7 +26,7 @@ import { parseChainIdParam } from '@/utils/chainParam';
 import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestTransactions } from '@/services/chainRpc';
-import { useLatestBlocksFeed } from '@/services/homeFeed';
+import { useLiveHeadGap } from '@/services/homeFeed';
 import { useSignaturesBatched } from '@/services/signatures';
 import { txCursorFromBlock } from '@/utils/blockRpcData';
 import { formatHash, formatNumber, formatRelativeTime, formatValue } from '@/utils/format';
@@ -279,13 +279,18 @@ export default function TransactionsList() {
     });
   };
 
-  // Live head for the staleness hint (same polled feed as the Blocks list
-  // and Home): keeps reporting the chain head while the displayed page
-  // holds the snapshot it was fetched with. The feed guards non-positive
-  // chain ids without an RPC call, so the unsupported-chain branch passes
-  // 0 and stays offline.
-  const liveHeadFeed = useLatestBlocksFeed(chainInfo ? currentChainId : 0);
-  const liveHead = liveHeadFeed.data?.latestBlockNumber ?? null;
+  // The displayed page's head snapshot — the staleness anchor below.
+  const anchorHead = data?.latestBlockNumber ?? null;
+
+  // Live head + staleness gap (useLiveHeadGap in services/homeFeed, the
+  // same polled feed as the Blocks list and Home): keeps reporting the
+  // chain head while the displayed page holds the snapshot it was
+  // fetched with. Strictly greater: a head at or below the snapshot is
+  // not stale news and renders nothing.
+  const { liveHead, newBlockCount } = useLiveHeadGap(
+    chainInfo ? currentChainId : 0,
+    anchorHead,
+  );
 
   // Anchor notice for the header area (pure resolver above): a dropped
   // malformed ?block= outranks a future anchor, which outranks silence.
@@ -294,15 +299,6 @@ export default function TransactionsList() {
     blockParam,
     liveHead,
   });
-
-  // Blocks mined beyond the displayed page's head snapshot since it was
-  // fetched. Strictly greater: a head at or below the snapshot is not
-  // stale news and renders nothing.
-  const anchorHead = data?.latestBlockNumber ?? null;
-  const newBlockCount =
-    anchorHead !== null && liveHead !== null && liveHead > anchorHead
-      ? liveHead - anchorHead
-      : null;
 
   // Chain switches replace the current entry via the shared Wave A helper;
   // the list legitimately drops a ?block= deep-link param on switch (the

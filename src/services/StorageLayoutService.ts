@@ -3,7 +3,11 @@ import { db, storageLayouts } from '../database/init';
 import { eq, and } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
 import { checksumAddress } from '../utils/address';
-import { ageHours, negativeEntryFresh } from '../utils/negativeCache';
+import {
+  ageHours,
+  negativeEntryFresh,
+  NOT_FOUND_CACHE_TTL_HOURS,
+} from '../utils/negativeCache';
 import { withTimeoutOrNull } from '../utils/withTimeout';
 import { rpcManager } from './RpcManager';
 import type { Address } from 'viem';
@@ -23,8 +27,8 @@ const FETCHER_TIMEOUT_MS = 8_000;
 
 // "Not found" results are negative-cached for a bounded window only: the
 // contract may be verified (or even deployed) later, so a permanent
-// NOT_FOUND row would keep serving a false negative forever.
-const NOT_FOUND_CACHE_TTL_HOURS = 24;
+// NOT_FOUND row would keep serving a false negative forever. The TTL is
+// the shared NOT_FOUND_CACHE_TTL_HOURS (utils/negativeCache).
 
 type Fetcher = {
   explorers: Array<{ type: string; client: unknown; key?: string }>;

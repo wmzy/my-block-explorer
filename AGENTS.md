@@ -2786,3 +2786,48 @@ pnpm typecheck           # tsc --noEmit
   `vitest --changed --maxWorkers=4` 22 files / 282 tests green, `pnpm
   build` green, throwaway-DB curl smoke (buckets trip at burst; ops
   summary names hits/rejected).
+- **2026-11-20 duplication review fix wave round 20 (4 read-only scouts +
+  Main-sequenced fixes)** — 11 findings adjudicated (9 fixed, 1
+  scout-withdrawn, 1 documented-deliberate); Main's own cross-cutting
+  sweeps (default-export audit, direct clipboard uses, falsy-zero,
+  parseInt drift, toLocaleString residue, cross-file same-name function
+  detector — the 5 hits were all deliberate families) came back clean.
+  **Canonicals** — `MAX_WINDOW_BLOCKS` (utils/scanLadder, import-free) is
+  the ONE 50M scan-window ceiling now: scanParams' `?window=` reader,
+  AddressService's tx-window clamp, views/Address/index.tsx
+  search-deeper cap, search.ts ttWindow zod max, TokenTransfers (5
+  private copies deleted; ContractSourceService's `50000000n` bigint
+  creation-search guard stays — different algorithm family);
+  `NOT_FOUND_CACHE_TTL_HOURS` lives in utils/negativeCache next to
+  `negativeEntryFresh` (SignatureService + StorageLayoutService
+  unified); `verifyActionsRow`/`verifySubmitLayout`/`verifyFeedbackOk`/
+  `verifyFeedbackDanger` in views/Contract/styles.ts fold the three
+  verify panels' triplicated CSS (ManualVerifyPanel remove = cx(
+  verifySubmitLayout, removeDangerStyles)); `useLiveHeadGap(chainId,
+  anchorHead)` in services/homeFeed (bigint anchor; strictly-greater
+  gap) absorbs the Blocks/Transactions lists' staleness derivation twin;
+  useAutoDiscovery's `trySavedThenScan(attempt, onSavedFound?)` absorbs
+  the autoDiscover/reconnect saved-URL-then-scan ladder (callers keep
+  isScanning/error flips). **Rate limiters** — labels PUT/DELETE → new
+  `labels-writes` 5/min·burst 5 (mirrors watch-writes); rpc-config
+  DELETE + custom-chain DELETE join their POST buckets (both reload the
+  RPC manager); live-verified via ops summary bucket stats. **Fixes** —
+  Windows CLI `--open` uses `start "" "<url>"` (quoted first arg is a
+  TITLE to cmd.exe's start — the old form opened Explorer on the cwd);
+  `formatHash` delegates to `formatAddress`; Contract view →
+  `resolveMainnetDefaultChainId`; validation.ts doc "safe integral".
+  **Rules pinned**: (1) migrating a view onto a NEW export of a service
+  module re-triggers the round-18 mock rule for EVERY factory mocking
+  that module — all six homeFeed-mocking suites needed `useLiveHeadGap`
+  modeled; derive it from the same mocked feed so per-test fixtures
+  flow into both consumers; (2) when a multi-arg route handler's
+  callback closes itself with `},` the CALL closes with `);` — a
+  habitual `});` tail is a parse error, and a TS `parseDiagnostics`
+  one-liner pinpoints it when esbuild's message is terse; (3) mcp
+  RpcGateway's `clients` map is deliberately unbounded (documented at
+  the declaration — clearing on 60s refresh would churn viem
+  transports). Deliberate keeps: Block/TransactionService row-coercer
+  twins, the same-name fetchContractSource/toApiError/compareHoldings/
+  readContract families. Verified: tsc 0, eslint 0 errors, `vitest
+  --changed --maxWorkers=4` 220 files / 2951 tests green, 4 MCP suites
+  by name, `pnpm build` green, throwaway-DB curl smoke.

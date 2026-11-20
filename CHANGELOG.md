@@ -9,6 +9,63 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-20 duplication review fix wave round 20 (4 read-only scouts +
+  Main-sequenced fixes)** — 11 findings adjudicated (9 fixed, 1 scout-
+  withdrawn, 1 documented-deliberate); Main's own cross-cutting sweeps
+  (default-export audit, direct clipboard uses, falsy-zero, parseInt
+  drift, toLocaleString residue, cross-file same-name function detector)
+  came back entirely clean — the convergence curve of rounds 11–19
+  continues. **New canonicals** — `MAX_WINDOW_BLOCKS` (utils/scanLadder)
+  is now the ONE 50M scan-window ceiling: scanParams' `?window=` reader,
+  AddressService's tx-window clamp, the Address view's search-deeper cap,
+  the ttWindow zod max (views/Address/search.ts) and TokenTransfers all
+  import it (5 private copies deleted; ContractSourceService's
+  `50000000n` bigint creation-search guard deliberately stays — a
+  different algorithm family); `NOT_FOUND_CACHE_TTL_HOURS` lifted into
+  utils/negativeCache next to `negativeEntryFresh` (SignatureService's
+  export + StorageLayoutService's private copy unified);
+  `verifyActionsRow`/`verifySubmitLayout`/`verifyFeedbackOk`/
+  `verifyFeedbackDanger` in views/Contract/styles.ts fold the three
+  verify panels' triplicated action-row/submit/feedback CSS (the
+  plumbing had already converged on verifyShared; ManualVerifyPanel's
+  remove button becomes `cx(verifySubmitLayout, removeDangerStyles)`);
+  `useLiveHeadGap(chainId, anchorHead)` in services/homeFeed absorbs the
+  Blocks/Transactions lists' byte-equal live-head + strictly-greater
+  staleness-gap derivation (both views render through NewBlocksNotice
+  already); useAutoDiscovery's `trySavedThenScan` ladder absorbs the
+  ~20-line saved-URL-probe-then-port-scan twin shared by mount-time
+  autoDiscover and explicit reconnect (callers keep their isScanning/
+  error flips; the silent-switch banner tail exists once). **Behavior
+  changes** — rate limiters on the previously-unlimited admin writes:
+  labels PUT/DELETE share a new `labels-writes` bucket 5/min·burst 5
+  (mirrors watch-writes), rpc-config DELETE and custom-chain DELETE
+  join their POST buckets (5/min·burst 2 — both reload the RPC manager,
+  the same cost class); all three live-verified via /api/ops/summary
+  bucket stats (5×200→429, 2×200→429, 2×404→429). Windows CLI `--open`
+  now uses the canonical `start "" "<url>"` empty-title form (the
+  quoted-first-arg spelling opened Explorer on the current directory
+  instead of the browser). **Consistency** — `formatHash` delegates to
+  `formatAddress` (byte-equal bodies, default-8 only difference); the
+  Contract view's hand-rolled two-tier chain fallback →
+  `resolveMainnetDefaultChainId`; validation.ts's parseStrictInteger
+  doc now says "safe integral" (Number.isSafeInteger); mcp RpcGateway's
+  clients map carries its deliberate-unbounded rationale at the
+  declaration. **Rules pinned**: (1) migrating a view onto a NEW export
+  of a service module re-triggers the round-18 mock rule for every
+  factory mocking that module — all six homeFeed-mocking suites needed
+  `useLiveHeadGap` modeled, and deriving it from the same feed fixture
+  keeps per-test fixtures flowing into both consumers; (2) when a
+  multi-arg route handler's callback closes itself with `},` the call
+  closes with `);` — the habitual `});` tail is a parse error (esbuild's
+  "Unexpected }" is terse; a TS parseDiagnostics one-liner names the
+  exact spot). Deliberate keeps: Block/TransactionService row-coercer
+  twins (divergence is load-bearing and documented), the same-name
+  fetchContractSource/toApiError/compareHoldings/readContract families
+  (different types/processes/semantics). All verified: tsc 0 errors,
+  eslint 0 errors, `vitest --changed --maxWorkers=4` 220 files / 2951
+  tests green, 4 MCP suites by name, `pnpm build` green, throwaway-DB
+  curl smoke.
+
 - **2026-11-19 duplication review fix wave round 19 (4 read-only scouts +
   Main-sequenced fixes)** — 5 findings adjudicated (4 fixed, 1 skipped
   no-payoff); the leanest round yet: all four scopes reported clean or

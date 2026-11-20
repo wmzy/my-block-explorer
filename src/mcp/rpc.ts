@@ -101,6 +101,11 @@ type CustomChainsResponse = {
 export class RpcGateway implements RpcReader {
   private remote: RemoteState | null = null;
   private loading: Promise<void> | null = null;
+  // Deliberately unbounded: one entry per (chainId, rpcUrl) the operator
+  // has ever configured in this process — an operator flips RPC URLs a
+  // handful of times, so the map stays tiny. NOT cleared on
+  // refreshRemote: that would mint fresh viem clients/transports every
+  // 60s for every active chain, a worse trade than the bound it removes.
   private readonly clients = new Map<string, PublicClient>();
 
   constructor(

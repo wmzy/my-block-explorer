@@ -20,6 +20,9 @@ import {
 import { useTokenOverview } from '@/services/tokenMetadata';
 import { classifyTokenOverview } from '@/views/Address/tokenOverview';
 import { createRpcClient } from '@/utils/realTimeData';
+// The scan-window ceiling the route reader and service clamp share
+// ("Search deeper" disables at this budget).
+import { MAX_WINDOW_BLOCKS } from '@/utils/scanLadder';
 import { checkAddressValidity } from '@/utils/addressValidity';
 import {
   addressSearchSchema,
@@ -47,11 +50,6 @@ import { ExternalLinks } from '@/components/ui/ExternalLinks';
 // Shared with the address page's Overview holdings section (same scan,
 // same first-page key — the Overview piggybacks on this tab's query).
 export const TRANSFER_LIMIT = 25;
-
-// Hard ceiling of the scan window (blocks) — matches the backend clamp
-// (route schema + service MAX_WINDOW_BLOCKS). "Search deeper" disables at
-// this budget.
-const MAX_WINDOW_BLOCKS = 50_000_000;
 
 const valueCell = css`
   font-family: var(--haze-font-mono);

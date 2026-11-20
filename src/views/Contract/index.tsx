@@ -32,7 +32,7 @@ import { CUSTOM_ABI_STORAGE_PREFIX } from '@/util/storageKeys';
 import { useReconnectRefetch } from '@/util/useReconnectRefetch';
 import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
-import { parseChainIdParam } from '@/utils/chainParam';
+import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
 import { isAddressShape } from '@/utils/address';
 import { useContractCreation, useContractSource, useStorageLayout } from '@/services/contracts';
 import { createRpcClient } from '@/utils/realTimeData';
@@ -944,11 +944,12 @@ export default function Contract() {
 
   // Strict parse (parseChainIdParam): Number() read '0x1a' as 26 and '1e5'
   // as 100000, so a hand-typed chain in the URL silently loaded — and
-  // cached under — a chain the user never asked for. An unparseable param
-  // becomes 0, which isChainSupported rejects, so it renders the same
-  // UnsupportedChainState recovery as a genuinely unknown chain (the
-  // guard its Home/Charts/Blocks siblings already use).
-  const currentChainId = parseChainIdParam(chainId) ?? (chainId === undefined ? 1 : 0);
+  // cached under — a chain the user never asked for. The helper is the
+  // canonical two-tier rule (undefined param → mainnet, malformed → 0)
+  // its Home/Charts/Blocks siblings use. An unparseable param becomes 0,
+  // which isChainSupported rejects, so it renders the same
+  // UnsupportedChainState recovery as a genuinely unknown chain.
+  const currentChainId = resolveMainnetDefaultChainId(chainId);
 
   // Raw pasted ABI (exactly the string that was applied), lazily restored
   // from localStorage so a reload keeps the unlock.

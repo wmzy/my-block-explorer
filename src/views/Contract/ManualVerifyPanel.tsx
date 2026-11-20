@@ -9,7 +9,15 @@ import { useState } from 'react';
 import { css, cx } from '@linaria/core';
 import { post, del } from '@/util/http';
 import { describeSubmitError } from './verifyShared';
-import { noticeBoxError, noticeBoxOk, secondaryActionButton } from './styles';
+import {
+  noticeBoxError,
+  noticeBoxOk,
+  secondaryActionButton,
+  verifyActionsRow,
+  verifyFeedbackDanger,
+  verifyFeedbackOk,
+  verifySubmitLayout,
+} from './styles';
 
 // Mirrors the backend's contract (routes/verify.ts): the ABI must parse
 // to a non-empty array. Validated live while typing so a doomed 400 never
@@ -117,39 +125,10 @@ const sourceInputStyles = css`
   resize: vertical;
 `;
 
-const feedbackOkStyles = css`
-  margin: 6px 0 0 0;
-  font-size: 12px;
-  color: var(--haze-color-success);
-`;
-
-const feedbackBadStyles = css`
-  margin: 6px 0 0 0;
-  font-size: 12px;
-  color: var(--haze-color-danger);
-`;
-
-const actionsRowStyles = css`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  flex-wrap: wrap;
-`;
-
-// Layout halves of the action buttons; colors/hover/disabled come from the
-// shared secondaryActionButton family (neutral submit) and the danger
-// recipe (remove) in ./styles.
-const submitStyles = css`
-  padding: 8px 18px;
-  font-size: 14px;
-  border-radius: 6px;
-`;
-
-const removeStyles = css`
-  padding: 8px 18px;
-  font-size: 14px;
-  border-radius: 6px;
+// Danger recipe for the remove action: the layout half is the shared
+// verifySubmitLayout; colors/hover/disabled stay here (the only danger
+// button in the family).
+const removeDangerStyles = css`
   background: var(--haze-color-danger-subtle);
   border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
   color: var(--haze-color-danger);
@@ -268,10 +247,10 @@ export function ManualVerifyPanel({
             If Sourcify later verifies this contract, the next fetch supersedes the local mark with
             the cryptographic result.
           </p>
-          <div className={actionsRowStyles}>
+          <div className={verifyActionsRow}>
             <button
               type="button"
-              className={removeStyles}
+              className={cx(verifySubmitLayout, removeDangerStyles)}
               disabled={removing}
               onClick={() => void handleRemove()}
             >
@@ -305,9 +284,9 @@ export function ManualVerifyPanel({
           />
           {abiText.trim() !== '' &&
             (abiFeedback.ok ? (
-              <p className={feedbackOkStyles}>ABI parses as a non-empty JSON array.</p>
+              <p className={verifyFeedbackOk}>ABI parses as a non-empty JSON array.</p>
             ) : (
-              <p className={feedbackBadStyles}>{abiFeedback.reason}</p>
+              <p className={verifyFeedbackDanger}>{abiFeedback.reason}</p>
             ))}
           <label className={fieldLabelStyles} htmlFor="manual-verify-name">
             Contract name (optional)
@@ -331,10 +310,10 @@ export function ManualVerifyPanel({
             spellCheck={false}
             onChange={e => setSourceText(e.target.value)}
           />
-          <div className={actionsRowStyles}>
+          <div className={verifyActionsRow}>
             <button
               type="button"
-              className={cx(secondaryActionButton, submitStyles)}
+              className={cx(secondaryActionButton, verifySubmitLayout)}
               disabled={!canSubmit}
               onClick={() => void handleSubmit()}
             >

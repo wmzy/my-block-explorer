@@ -83,6 +83,17 @@ const mockUseLatestBlocksFeed = vi.fn<(...args: unknown[]) => FeedHookResult>();
 
 vi.mock('@/services/homeFeed', () => ({
   useLatestBlocksFeed: (...args: unknown[]) => mockUseLatestBlocksFeed(...args),
+  // The composed staleness hook: same feed fixture, the real derivation
+  // (strictly-greater gap), so feed changes flow into the notice.
+  useLiveHeadGap: (chainId: number, anchorHead: bigint | null) => {
+    const feed = mockUseLatestBlocksFeed(chainId);
+    const liveHead = feed.data?.latestBlockNumber ?? null;
+    const newBlockCount =
+      anchorHead !== null && liveHead !== null && liveHead > anchorHead
+        ? liveHead - anchorHead
+        : null;
+    return { liveHead, newBlockCount };
+  },
 }));
 
 // From/To cells resolve ENS inline; stubbed to the unresolved state so no

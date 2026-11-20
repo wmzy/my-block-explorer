@@ -42,7 +42,12 @@ export or inspect them from the app's Settings -> Backup & restore panel,
 and remove them with the browser's own site-data controls.`;
 
 function openBrowser(url: string): void {
-  const cmd = platform() === 'darwin' ? 'open' : platform() === 'win32' ? 'start' : 'xdg-open';
+  // Windows: `start` treats a quoted FIRST argument as the new window's
+  // TITLE, not the target — `start "https://…" ` opens Explorer on the
+  // current directory instead of the browser. The canonical empty-title
+  // form `start "" "<url>"` is the only spelling that opens the URL.
+  const cmd =
+    platform() === 'darwin' ? 'open' : platform() === 'win32' ? `start ""` : 'xdg-open';
   exec(`${cmd} "${url}"`, error => {
     if (error) {
       console.warn(`Could not open browser: ${error.message}`);

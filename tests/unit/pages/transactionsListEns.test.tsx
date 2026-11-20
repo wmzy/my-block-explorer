@@ -55,6 +55,7 @@ vi.mock('@/services/chainRpc', () => ({
 
 vi.mock('@/services/homeFeed', () => ({
   useLatestBlocksFeed: () => ({ data: undefined }),
+  useLiveHeadGap: () => ({ liveHead: null, newBlockCount: null }),
 }));
 
 // One fixture address resolves; every other address settles unresolved —

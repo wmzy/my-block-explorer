@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { clampInternalTxDepth, DEFAULT_INTERNAL_TX_DEPTH } from '@/utils/internalTxScan';
+import { MAX_WINDOW_BLOCKS } from '@/utils/scanLadder';
 import { checkAddressValidity } from '@/utils/addressValidity';
 
 // The address page's URL-driven state, shared by every writer on the page
@@ -60,7 +61,7 @@ export const addressSearchSchema = z.object({
   page: z.coerce.number().catch(1),
   window: z.coerce.number().int().min(1).optional().catch(undefined),
   ttPage: z.coerce.number().catch(1),
-  ttWindow: z.coerce.number().int().min(1).max(50_000_000).optional().catch(undefined),
+  ttWindow: z.coerce.number().int().min(1).max(MAX_WINDOW_BLOCKS).optional().catch(undefined),
   ttStandard: transferStandardSchema.optional().catch(undefined),
   itDepth: z.coerce.number().int().positive().optional().catch(undefined),
   tab: activityTabSchema.optional().catch(undefined),

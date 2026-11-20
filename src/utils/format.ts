@@ -205,11 +205,13 @@ export function formatAddress(address: string, length = 6): string {
 }
 
 /**
- * Format a hash
+ * Format a hash — formatAddress with a wider default (hashes lack the
+ * addresses' visual 0x+checksum anchor, so a couple more body chars per
+ * side keep them distinguishable). Same body by construction: delegate
+ * instead of duplicating the truncation recipe.
  */
 export function formatHash(hash: string, length = 8): string {
-  if (!hash || hash.length < 10) return hash;
-  return truncateMiddle(hash, length + 2, length);
+  return formatAddress(hash, length);
 }
 
 // Locale-pinned digit grouping: identical across host locales AND stable

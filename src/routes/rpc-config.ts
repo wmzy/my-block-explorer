@@ -158,7 +158,9 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, rpcConfigWriteRateLimite
   }
 });
 
-app.delete('/rpc-configs/:chainId', requireAdminTokenIfConfigured, async c => {
+// Same write bucket as the POST: the DELETE also reloads the RPC manager
+// (a live re-read of the config table), the same cost class.
+app.delete('/rpc-configs/:chainId', requireAdminTokenIfConfigured, rpcConfigWriteRateLimiter, async c => {
   try {
     const chainId = getValidatedChainId(c.req.param('chainId'));
 

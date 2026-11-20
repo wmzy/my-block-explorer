@@ -9,7 +9,8 @@ import { parseStrictInteger } from './strictInteger';
 
 /**
  * Parse a plain decimal integer, or null when the input is not one.
- * Numbers pass through when finite and integral.
+ * Numbers pass through when finite, integral and within the safe
+ * integer range (Number.isSafeInteger).
  *
  * Exported for the route query-param parsers and the events-panel/
  * RPC-config inputs (every strict-decimal reader that used to lean on

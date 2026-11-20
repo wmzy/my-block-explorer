@@ -123,6 +123,15 @@ const listRateLimiter = createRateLimiter({
   burst: 3,
 });
 
+// 5 writes per minute per client (burst 5), mirroring the watch-writes
+// bucket: the add/edit/remove gestures of one operator's labeling
+// session, while a script cycling addresses cannot.
+const labelsWriteLimiter = createRateLimiter({
+  name: 'labels-writes',
+  requestsPerMinute: 5,
+  burst: 5,
+});
+
 // GET /labels — every label row across chains, the backup/export feed.
 // Gated by requireAdminTokenIfConfigured: unlike the per-address read
 // ("what does this address look like"), this dumps the operator's entire
@@ -164,7 +173,7 @@ app.get('/labels', requireAdminTokenIfConfigured, listRateLimiter, async c => {
 // PUT /chains/:chainId/labels/:address — upsert (full replace). The row's
 // updatedAt rides the conflict path; createdAt keeps its original value on
 // update and defaults to now() on first insert.
-app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async c => {
+app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, labelsWriteLimiter, async c => {
   const parsed = parseChainAndAddressRequest(c.req.param('chainId'), c.req.param('address'));
   if ('error' in parsed) return c.json(parsed, 400);
 
@@ -201,7 +210,7 @@ app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async
 
 // DELETE /chains/:chainId/labels/:address — remove the label. Deleting an
 // absent label is 404 (idempotence would hide typos in the client's key).
-app.delete('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async c => {
+app.delete('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, labelsWriteLimiter, async c => {
   const parsed = parseChainAndAddressRequest(c.req.param('chainId'), c.req.param('address'));
   if ('error' in parsed) return c.json(parsed, 400);
 

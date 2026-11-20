@@ -150,3 +150,34 @@ export const secondaryActionButton = css`
     cursor: not-allowed;
   }
 `;
+
+// Verify-panel family (Compile/Manual/Sourcify panels share the plumbing
+// in ./verifyShared; these are the shared visual halves): the action row
+// under a form, the submit-button LAYOUT half (colors/hover/disabled
+// come from the button families above), and the small success/danger
+// feedback lines the forms render under their inputs.
+export const verifyActionsRow = css`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+`;
+
+export const verifySubmitLayout = css`
+  padding: 8px 18px;
+  font-size: 14px;
+  border-radius: 6px;
+`;
+
+export const verifyFeedbackOk = css`
+  margin: 6px 0 0 0;
+  font-size: 12px;
+  color: var(--haze-color-success);
+`;
+
+export const verifyFeedbackDanger = css`
+  margin: 6px 0 0 0;
+  font-size: 12px;
+  color: var(--haze-color-danger);
+`;
